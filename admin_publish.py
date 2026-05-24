@@ -7,7 +7,7 @@ import urllib.request
 import pandas as pd
 import streamlit as st
 
-from admin_io import BATCHES, BATCH_COLS, STONES, STONE_COLS, load_batches, load_stones
+from admin_io import BATCH_COLS, STONE_COLS, load_batches, load_stones, public_preview
 
 DATA_REPO = 'kka45821-del/kurgin-data'
 BRANCH = 'main'
@@ -59,37 +59,75 @@ def _publish_file(repo: str, path: str, content: str, message: str, token: str) 
 
 
 def _df_to_csv(df: pd.DataFrame, columns: list[str]) -> str:
+    result = df.copy()
     for col in columns:
-        if col not in df.columns:
-            df[col] = ''
-    return df[columns].to_csv(index=False)
+        if col not in result.columns:
+            result[col] = ''
+    return result[columns].to_csv(index=False)
+
+
+def _clean_value(value):
+    if pd.isna(value):
+        return None
+    if isinstance(value, (int, float, bool)):
+        return value
+    text = str(value).strip()
+    if text == '' or text.lower() in ['nan', 'none']:
+        return None
+    return text
+
+
+def _catalog_payload(df: pd.DataFrame) -> str:
+    public = public_preview(df).copy()
+    stones = []
+    for _, row in public.iterrows():
+        stone = {}
+        for col in STONE_COLS:
+            stone[col] = _clean_value(row.get(col))
+        stone['id'] = stone.get('stone_id')
+        stone['score'] = stone.get('karo_score')
+        stone['price'] = stone.get('price_rub')
+        stones.append(stone)
+    payload = {
+        'source': 'KURGIN Admin',
+        'updated_at': pd.Timestamp.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'count': len(stones),
+        'stones': stones,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def render_publish_tab() -> None:
-    st.subheader('Опубликовать каталог в kurgin-data')
-    st.caption('Публичный сайт не меняем. Эта кнопка только копирует проверенные CSV из админки в общий репозиторий данных.')
+    st.subheader('Опубликовать catalog.json в kurgin-data')
+    st.caption('Публикуем только данные. Публичный сайт и его дизайн не меняем.')
 
     stones = load_stones()
     batches = load_batches()
+    catalog_json = _catalog_payload(stones)
 
-    st.metric('Камней в локальном каталоге админки', len(stones))
-    st.metric('Партий в локальном журнале', len(batches))
+    st.metric('Всего камней в админке', len(stones))
+    st.metric('Публичных камней для catalog.json', len(public_preview(stones)))
+    st.metric('Партий', len(batches))
 
-    st.write('Preview stones.csv')
-    st.dataframe(stones.head(20), use_container_width=True)
+    st.write('Preview публичных камней')
+    st.dataframe(public_preview(stones).head(20), use_container_width=True)
+
+    st.download_button('Скачать catalog.json', catalog_json, file_name='catalog.json')
+    st.download_button('Скачать stones.csv', _df_to_csv(stones, STONE_COLS), file_name='stones.csv')
+    st.download_button('Скачать upload_batches.csv', _df_to_csv(batches, BATCH_COLS), file_name='upload_batches.csv')
 
     token = _token()
     if not token:
-        st.warning('Для прямой публикации нужен Streamlit secret GITHUB_TOKEN с доступом к kurgin-data.')
-        st.download_button('Скачать stones.csv', _df_to_csv(stones, STONE_COLS), file_name='stones.csv')
-        st.download_button('Скачать upload_batches.csv', _df_to_csv(batches, BATCH_COLS), file_name='upload_batches.csv')
+        st.warning('Автопубликация требует Streamlit secret GITHUB_TOKEN. Пока можно скачать catalog.json и загрузить его в kurgin-data вручную.')
         return
 
-    confirm = st.checkbox('Подтверждаю публикацию текущего каталога в kurgin-data')
-    if st.button('Опубликовать каталог в kurgin-data', type='primary', disabled=not confirm):
+    confirm = st.checkbox('Подтверждаю публикацию catalog.json в kurgin-data')
+    if st.button('Опубликовать catalog.json', type='primary', disabled=not confirm):
         try:
-            _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones from admin', token)
-            _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish batches from admin', token)
-            st.success('Каталог опубликован в kurgin-data')
+            _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)
+            _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)
+            _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)
+            _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)
+            st.success('catalog.json опубликован в kurgin-data')
         except Exception as exc:
             st.error(f'Ошибка публикации: {exc}')
