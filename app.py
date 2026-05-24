@@ -9,29 +9,30 @@ st.set_page_config(page_title='KURGIN Admin MVP', page_icon='⚙️', layout='wi
 
 DATA = Path('data')
 DATA.mkdir(exist_ok=True)
-DOCS = DATA / 'supplier_documents'
-DOCS.mkdir(exist_ok=True)
 STONES = DATA / 'stones.csv'
 BATCHES = DATA / 'upload_batches.csv'
 ADMIN_PASSWORD = os.getenv('KURGIN_ADMIN_PASSWORD', 'admin123')
 
 STONE_COLS = [
-    'stone_id','title','shape','carat','color','clarity','lab','report_number','price_rub','karo_score',
-    'current_status','batch_number','upload_date','supplier_name','show_in_catalog','is_mvp_eligible',
-    'has_lab_document','physically_received','checked_by_kurgin','upload_confirmed','notes_internal'
+    'stone_id','title','shape','carat','color','clarity','lab','report_number',
+    'price_rub','karo_score','tags','current_status','batch_number','upload_date',
+    'supplier_name','show_in_catalog','is_mvp_eligible','has_lab_document',
+    'physically_received','checked_by_kurgin','upload_confirmed','notes_internal'
 ]
-BATCH_COLS = ['batch_number','upload_date','supplier_name','stones_count','document_name','document_path','upload_confirmed','notes']
+BATCH_COLS = ['batch_number','upload_date','supplier_name','stones_count','upload_confirmed','notes']
+
 ALIASES = {
     'stone_id':['stone_id','id','sku','report_number','report #'],
     'title':['title','name','description'],
     'shape':['shape','форма','огранка'],
-    'carat':['carat','ct','weight','вес'],
-    'color':['color','цвет'],
+    'carat':['carat','ct','weight','вес','карат'],
+    'color':['color','colour','цвет'],
     'clarity':['clarity','чистота'],
-    'lab':['lab','laboratory'],
-    'report_number':['report_number','report #','certificate_number'],
-    'price_rub':['price_rub','price','цена'],
-    'karo_score':['karo_score','score']
+    'lab':['lab','laboratory','issuer','лаборатория'],
+    'report_number':['report_number','report','report #','certificate_number'],
+    'price_rub':['price_rub','price','цена','rub'],
+    'karo_score':['karo_score','score','kurgin_score','karo'],
+    'tags':['tags','tag','теги','метки','бейджи']
 }
 
 def load(path, cols):
@@ -54,26 +55,18 @@ def next_batch():
                 nums.append(int(v.split('-')[-1]))
             except Exception:
                 pass
-    return f'P-{(max(nums) + 1 if nums else 1):04d}'
+    return f'P-{(max(nums)+1 if nums else 1):04d}'
 
 def pick(raw, key):
-    m = {str(c).strip().lower(): c for c in raw.columns}
+    lower = {str(c).strip().lower(): c for c in raw.columns}
     for a in ALIASES.get(key, [key]):
-        if a.lower() in m:
-            return raw[m[a.lower()]].reset_index(drop=True)
+        if a.lower() in lower:
+            return raw[lower[a.lower()]].reset_index(drop=True)
     return pd.Series([''] * len(raw))
-
-def save_doc(file, batch):
-    if file is None:
-        return '', ''
-    name = file.name.replace('/', '_').replace('\\', '_')
-    path = DOCS / f'{batch}__{name}'
-    path.write_bytes(file.getvalue())
-    return name, str(path)
 
 def normalize(raw, batch, dt, supplier, notes):
     out = pd.DataFrame({c: [''] * len(raw) for c in STONE_COLS})
-    for c in ['stone_id','title','shape','carat','color','clarity','lab','report_number','price_rub','karo_score']:
+    for c in ['stone_id','title','shape','carat','color','clarity','lab','report_number','price_rub','karo_score','tags']:
         out[c] = pick(raw, c)
     out['current_status'] = 'available'
     out['batch_number'] = batch
@@ -91,7 +84,10 @@ def normalize(raw, batch, dt, supplier, notes):
     empty = out['stone_id'].astype(str).str.strip().isin(['','nan','None'])
     out.loc[empty, 'stone_id'] = [f'{batch}-{i+1:04d}' for i in range(empty.sum())]
     empty_title = out['title'].astype(str).str.strip().isin(['','nan','None'])
-    out.loc[empty_title, 'title'] = out.loc[empty_title,'shape'].astype(str)+' '+out.loc[empty_title,'carat'].astype(str)+' '+out.loc[empty_title,'color'].astype(str)+' '+out.loc[empty_title,'clarity'].astype(str)
+    out.loc[empty_title, 'title'] = (
+        out.loc[empty_title,'shape'].astype(str)+' '+out.loc[empty_title,'carat'].astype(str)+' '+
+        out.loc[empty_title,'color'].astype(str)+' '+out.loc[empty_title,'clarity'].astype(str)
+    )
     return out[STONE_COLS]
 
 def public(df):
@@ -115,6 +111,8 @@ if 'login' not in st.session_state:
     st.session_state.login = False
 
 st.title('KURGIN Admin MVP')
+st.caption('Каталог, партии и теги из Excel')
+
 if not st.session_state.login:
     p = st.text_input('Пароль', type='password')
     if st.button('Войти', type='primary'):
@@ -127,7 +125,6 @@ if st.button('Выйти'):
     st.session_state.login = False
     st.rerun()
 
-st.caption('Каждый камень имеет batch_number, поэтому партии можно смотреть отдельно.')
 t1,t2,t3,t4 = st.tabs(['Каталог','Загрузка партии','Партии','Публичный preview'])
 
 with t1:
@@ -146,7 +143,6 @@ with t2:
         dt = st.date_input('Дата партии', value=date.today())
         supplier = st.text_input('Поставщик')
     with b:
-        doc = st.file_uploader('Документ партии', type=['pdf','xlsx','xls','docx','png','jpg','jpeg'])
         file = st.file_uploader('Файл камней .xlsx', type=['xlsx'])
     notes = st.text_area('Заметка')
     mode = st.radio('Режим', ['Добавить к текущим','Заменить каталог'], horizontal=True)
@@ -157,14 +153,14 @@ with t2:
         norm = normalize(raw, batch.strip(), dt, supplier.strip(), notes)
         st.write('После нормализации')
         st.dataframe(norm.head(20), use_container_width=True)
+        st.info('Колонка tags / теги из Excel сохраняется в каталог без перезаписи.')
         ok = st.checkbox('Подтверждаю загрузку партии')
         if st.button('Сохранить партию', type='primary', disabled=not (ok and batch.strip() and supplier.strip())):
-            doc_name, doc_path = save_doc(doc, batch.strip())
             cur = load(STONES, STONE_COLS)
             res = pd.concat([cur, norm], ignore_index=True) if mode.startswith('Добавить') else norm
             save(res, STONES)
             log = load(BATCHES, BATCH_COLS)
-            row = pd.DataFrame([{'batch_number':batch.strip(),'upload_date':str(dt),'supplier_name':supplier.strip(),'stones_count':len(norm),'document_name':doc_name,'document_path':doc_path,'upload_confirmed':True,'notes':notes}])
+            row = pd.DataFrame([{'batch_number':batch.strip(),'upload_date':str(dt),'supplier_name':supplier.strip(),'stones_count':len(norm),'upload_confirmed':True,'notes':notes}])
             save(pd.concat([log,row], ignore_index=True), BATCHES)
             st.success(f'Партия {batch} сохранена. Камней: {len(norm)}')
 
@@ -181,10 +177,6 @@ with t3:
         part = stones[stones['batch_number'].astype(str).eq(selected)]
         st.metric('Камней в выбранной партии', len(part))
         st.dataframe(part, use_container_width=True)
-        batch_log = log[log['batch_number'].astype(str).eq(selected)]
-        if not batch_log.empty:
-            st.write('Информация по партии')
-            st.dataframe(batch_log.tail(1), use_container_width=True)
 
 with t4:
     prev = public(load(STONES, STONE_COLS))
