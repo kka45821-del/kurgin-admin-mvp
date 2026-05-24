@@ -2,7 +2,7 @@ import os
 from datetime import date
 import pandas as pd
 import streamlit as st
-from admin_io import load_stones, save_stones, next_batch_number, normalize_excel, public_preview, upsert_batch_log
+from admin_io import ALIASES, key_name, load_stones, save_stones, next_batch_number, normalize_excel, public_preview, upsert_batch_log
 from admin_batches import render_batches_tab
 
 st.set_page_config(page_title='KURGIN Admin MVP', page_icon='⚙️', layout='wide')
@@ -46,6 +46,21 @@ with tab_upload:
 
     if uploaded_file is not None:
         raw = pd.read_excel(uploaded_file)
+        st.write('Колонки в Excel')
+        st.code('\n'.join([str(c) for c in raw.columns]))
+
+        normalized_columns = {key_name(col): col for col in raw.columns}
+        mapping_rows = []
+        for target, aliases in ALIASES.items():
+            found = ''
+            for alias in aliases:
+                if key_name(alias) in normalized_columns:
+                    found = str(normalized_columns[key_name(alias)])
+                    break
+            mapping_rows.append({'поле KURGIN': target, 'найденная колонка Excel': found})
+        st.write('Распознавание колонок')
+        st.dataframe(pd.DataFrame(mapping_rows), use_container_width=True)
+
         st.write('Preview Excel')
         st.dataframe(raw.head(20), use_container_width=True)
         normalized = normalize_excel(raw, batch_number.strip(), upload_date, supplier_name.strip(), notes)
