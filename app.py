@@ -152,15 +152,30 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+if 'admin_logged_in' not in st.session_state:
+    st.session_state.admin_logged_in = False
+
 st.title('KURGIN Admin MVP')
 st.caption('Отдельная админка каталога. Публичный сайт не трогаем.')
 
-password = st.text_input('Пароль администратора', type='password')
-if password != ADMIN_PASSWORD:
-    st.warning('Введите пароль администратора. По умолчанию: admin123')
+if not st.session_state.admin_logged_in:
+    password = st.text_input('Пароль администратора', type='password')
+    if st.button('Войти', type='primary'):
+        if password == ADMIN_PASSWORD:
+            st.session_state.admin_logged_in = True
+            st.rerun()
+        else:
+            st.error('Неверный пароль')
     st.stop()
 
-st.success('Админ-доступ открыт')
+col_status, col_logout = st.columns([5, 1])
+with col_status:
+    st.success('Админ-доступ открыт')
+with col_logout:
+    if st.button('Выйти', use_container_width=True):
+        st.session_state.admin_logged_in = False
+        st.rerun()
+
 st.warning('Публичный каталог должен показывать только confirmed-upload / eligible / available / confirmed камни.')
 
 tab1, tab2, tab3, tab4 = st.tabs(['Каталог', 'Загрузка .xlsx', 'Публичный preview', 'История загрузок'])
