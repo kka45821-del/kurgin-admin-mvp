@@ -1,4 +1,3 @@
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -15,16 +14,16 @@ STONE_COLS = BASE_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = ['batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes']
 
 ALIASES = {
-    'stone_id': ['stone_id', 'id', 'sku', 'report_number', 'report #'],
-    'title': ['title', 'name', 'description'],
-    'shape': ['shape', 'форма', 'огранка'],
-    'carat': ['carat', 'ct', 'weight', 'вес', 'карат'],
-    'color': ['color', 'colour', 'цвет'],
-    'clarity': ['clarity', 'чистота'],
-    'lab': ['lab', 'laboratory', 'issuer', 'лаборатория'],
-    'report_number': ['report_number', 'report', 'report #', 'certificate_number'],
-    'price_rub': ['price_rub', 'price', 'цена', 'rub'],
-    'karo_score': ['karo_score', 'score', 'kurgin_score', 'karo'],
+    'stone_id': ['stone_id', 'stone id', 'id', 'sku', 'stock', 'stock id', 'stock_id', 'lot', 'lot no', 'lot number', 'report_number', 'report number', 'report #', 'certificate_number', 'certificate number', 'cert number', 'cert no'],
+    'title': ['title', 'name', 'description', 'stone', 'item', 'product', 'название', 'описание'],
+    'shape': ['shape', 'shape name', 'diamond shape', 'cut shape', 'form', 'форма', 'огранка'],
+    'carat': ['carat', 'carats', 'ct', 'cts', 'weight', 'carat weight', 'weight ct', 'size', 'вес', 'карат'],
+    'color': ['color', 'colour', 'color grade', 'colour grade', 'col', 'цвет', 'цветность'],
+    'clarity': ['clarity', 'clarity grade', 'cla', 'cl', 'purity', 'чистота'],
+    'lab': ['lab', 'laboratory', 'cert lab', 'certificate lab', 'grading lab', 'issuer', 'лаборатория'],
+    'report_number': ['report_number', 'report number', 'report no', 'report #', 'report', 'certificate', 'certificate_number', 'certificate number', 'certificate no', 'cert', 'cert no', 'номер сертификата'],
+    'price_rub': ['price_rub', 'price rub', 'price_rur', 'price rur', 'price', 'rub', 'rur', 'цена', 'стоимость'],
+    'karo_score': ['karo_score', 'karo score', 'kurgin_score', 'kurgin score', 'score', 'karo', 'оценка'],
     'tag1': ['tag1', 'teg1', 'тег1'],
     'tag2': ['tag2', 'teg2', 'тег2'],
     'tag3': ['tag3', 'teg3', 'тег3'],
@@ -34,15 +33,17 @@ ALIASES = {
 }
 
 
+def key_name(value) -> str:
+    return ''.join(ch for ch in str(value).strip().lower() if ch.isalnum())
+
+
 def load_table(path: Path, columns: list[str]) -> pd.DataFrame:
     df = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=columns)
-
     if 'tags' in df.columns:
         parts = df['tags'].fillna('').astype(str).str.replace(',', ';', regex=False).str.split(';')
         for index, col in enumerate(TAG_COLS):
             if col not in df.columns:
                 df[col] = parts.apply(lambda values: values[index].strip() if len(values) > index else '')
-
     for col in columns:
         if col not in df.columns:
             df[col] = ''
@@ -83,19 +84,24 @@ def next_batch_number() -> str:
 
 
 def pick_column(raw: pd.DataFrame, key: str) -> pd.Series:
-    columns = {str(col).strip().lower(): col for col in raw.columns}
+    columns = {key_name(col): col for col in raw.columns}
     for alias in ALIASES.get(key, [key]):
-        if alias.lower() in columns:
-            return raw[columns[alias.lower()]].reset_index(drop=True)
+        normalized_alias = key_name(alias)
+        if normalized_alias in columns:
+            return raw[columns[normalized_alias]].reset_index(drop=True)
     return pd.Series([''] * len(raw))
+
+
+def clean_number(series: pd.Series) -> pd.Series:
+    cleaned = series.astype(str).str.replace(',', '.', regex=False)
+    cleaned = cleaned.str.replace(r'[^0-9.\-]', '', regex=True)
+    return pd.to_numeric(cleaned, errors='coerce').fillna(0)
 
 
 def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_name: str, notes: str) -> pd.DataFrame:
     out = pd.DataFrame({col: [''] * len(raw) for col in STONE_COLS})
-
     for col in BASE_COLS + TAG_COLS:
         out[col] = pick_column(raw, col)
-
     out['current_status'] = 'available'
     out['batch_number'] = str(batch_number)
     out['upload_date'] = str(upload_date)
@@ -107,16 +113,12 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out['checked_by_kurgin'] = True
     out['upload_confirmed'] = True
     out['notes_internal'] = notes or 'uploaded_xlsx'
-
     for col in ['carat', 'price_rub', 'karo_score']:
-        out[col] = pd.to_numeric(out[col], errors='coerce').fillna(0)
-
+        out[col] = clean_number(out[col])
     for col in TAG_COLS:
         out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': ''})
-
     empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None'])
     out.loc[empty_id, 'stone_id'] = [f'{batch_number}-{i + 1:04d}' for i in range(empty_id.sum())]
-
     empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None'])
     out.loc[empty_title, 'title'] = (
         out.loc[empty_title, 'shape'].astype(str) + ' ' +
@@ -124,7 +126,6 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
         out.loc[empty_title, 'color'].astype(str) + ' ' +
         out.loc[empty_title, 'clarity'].astype(str)
     )
-
     return out[STONE_COLS]
 
 
@@ -136,12 +137,8 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     for col in bool_cols:
         result[col] = result[col].astype(str).str.lower().isin(['true', '1', 'yes', 'да'])
     return result[
-        result['show_in_catalog'] &
-        result['is_mvp_eligible'] &
-        result['has_lab_document'] &
-        result['physically_received'] &
-        result['checked_by_kurgin'] &
-        result['upload_confirmed'] &
+        result['show_in_catalog'] & result['is_mvp_eligible'] & result['has_lab_document'] &
+        result['physically_received'] & result['checked_by_kurgin'] & result['upload_confirmed'] &
         result['current_status'].astype(str).str.lower().eq('available')
     ]
 
