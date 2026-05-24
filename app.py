@@ -5,6 +5,7 @@ import streamlit as st
 from admin_io import ALIASES, key_name, load_stones, save_stones, next_batch_number, normalize_excel, public_preview, upsert_batch_log
 from admin_batches import render_batches_tab
 from admin_publish import render_publish_tab
+from admin_validation import validate_catalog
 
 st.set_page_config(page_title='KURGIN Admin MVP', page_icon='⚙️', layout='wide')
 ADMIN_PASSWORD = os.getenv('KURGIN_ADMIN_PASSWORD', 'admin123')
@@ -65,8 +66,20 @@ with tab_upload:
         normalized = normalize_excel(raw, batch_number.strip(), upload_date, supplier_name.strip(), notes)
         st.write('После нормализации')
         st.dataframe(normalized.head(20), use_container_width=True)
+
+        critical_errors, warnings = validate_catalog(normalized)
+        st.subheader('Проверка загрузки')
+        if critical_errors.empty:
+            st.success('Критических ошибок не найдено')
+        else:
+            st.error('Есть критические ошибки. Партию нельзя сохранять, пока они не исправлены.')
+            st.dataframe(critical_errors, use_container_width=True)
+        if not warnings.empty:
+            st.warning('Есть предупреждения. Их можно оставить для текущего этапа, особенно по цене и Karo Score.')
+            st.dataframe(warnings, use_container_width=True)
+
         confirmed = st.checkbox('Подтверждаю загрузку партии')
-        can_save = confirmed and bool(batch_number.strip()) and bool(supplier_name.strip())
+        can_save = confirmed and critical_errors.empty and bool(batch_number.strip()) and bool(supplier_name.strip())
         if st.button('Сохранить партию', type='primary', disabled=not can_save):
             current = load_stones()
             result = pd.concat([current, normalized], ignore_index=True) if mode.startswith('Добавить') else normalized
