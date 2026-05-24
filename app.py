@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from admin_io import ALIASES, key_name, load_stones, save_stones, next_batch_number, normalize_excel, public_preview, upsert_batch_log
 from admin_batches import render_batches_tab
+from admin_publish import render_publish_tab
 
 st.set_page_config(page_title='KURGIN Admin MVP', page_icon='⚙️', layout='wide')
 ADMIN_PASSWORD = os.getenv('KURGIN_ADMIN_PASSWORD', 'admin123')
@@ -25,7 +26,7 @@ if st.button('Выйти'):
     st.session_state.login = False
     st.rerun()
 
-tab_catalog, tab_upload, tab_batches, tab_preview = st.tabs(['Каталог', 'Загрузка партии', 'Партии', 'Публичный preview'])
+tab_catalog, tab_upload, tab_batches, tab_preview, tab_publish = st.tabs(['Каталог', 'Загрузка партии', 'Партии', 'Публичный preview', 'Публикация'])
 
 with tab_catalog:
     st.subheader('Каталог камней')
@@ -48,7 +49,6 @@ with tab_upload:
         raw = pd.read_excel(uploaded_file)
         st.write('Колонки в Excel')
         st.code('\n'.join([str(c) for c in raw.columns]))
-
         normalized_columns = {key_name(col): col for col in raw.columns}
         mapping_rows = []
         for target, aliases in ALIASES.items():
@@ -60,7 +60,6 @@ with tab_upload:
             mapping_rows.append({'поле KURGIN': target, 'найденная колонка Excel': found})
         st.write('Распознавание колонок')
         st.dataframe(pd.DataFrame(mapping_rows), use_container_width=True)
-
         st.write('Preview Excel')
         st.dataframe(raw.head(20), use_container_width=True)
         normalized = normalize_excel(raw, batch_number.strip(), upload_date, supplier_name.strip(), notes)
@@ -83,3 +82,6 @@ with tab_preview:
     preview = public_preview(load_stones())
     st.dataframe(preview, use_container_width=True)
     st.metric('Публичных камней', len(preview))
+
+with tab_publish:
+    render_publish_tab()
