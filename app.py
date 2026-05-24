@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -7,16 +8,23 @@ import streamlit as st
 st.set_page_config(page_title='KURGIN Admin MVP', page_icon='⚙️', layout='wide')
 
 DATA_DIR = Path('data')
+DOC_DIR = DATA_DIR / 'supplier_documents'
 DATA_DIR.mkdir(exist_ok=True)
+DOC_DIR.mkdir(exist_ok=True)
 STONES_FILE = DATA_DIR / 'stones.csv'
+UPLOAD_LOG_FILE = DATA_DIR / 'upload_batches.csv'
 ADMIN_PASSWORD = os.getenv('KURGIN_ADMIN_PASSWORD', 'admin123')
 
 COLUMNS = [
     'stone_id','title','shape','carat','color','clarity','lab','report_number',
     'price_rub','availability_status','internal_status','price_status',
     'karo_score','section_id','tags','show_in_catalog','is_mvp_eligible',
-    'has_lab_document','physically_received','checked_by_kurgin','notes_internal'
+    'has_lab_document','physically_received','checked_by_kurgin',
+    'upload_date','supplier_name','supplier_document_name','supplier_document_path','batch_id',
+    'notes_internal'
 ]
+
+LOG_COLUMNS = ['batch_id','upload_date','supplier_name','document_name','document_path','stones_count','notes']
 
 ALIASES = {
     'stone_id': ['stone_id','id','sku','report_number','report #','certificate_number'],
@@ -32,23 +40,40 @@ ALIASES = {
 }
 
 
-def load_stones() -> pd.DataFrame:
-    if STONES_FILE.exists():
-        df = pd.read_csv(STONES_FILE)
+def load_table(path: Path, columns: list[str]) -> pd.DataFrame:
+    if path.exists():
+        df = pd.read_csv(path)
     else:
-        df = pd.DataFrame(columns=COLUMNS)
-    for col in COLUMNS:
+        df = pd.DataFrame(columns=columns)
+    for col in columns:
         if col not in df.columns:
             df[col] = ''
-    return df[COLUMNS]
+    return df[columns]
+
+
+def save_table(df: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(exist_ok=True)
+    df.to_csv(path, index=False)
+
+
+def load_stones() -> pd.DataFrame:
+    return load_table(STONES_FILE, COLUMNS)
 
 
 def save_stones(df: pd.DataFrame) -> None:
-    DATA_DIR.mkdir(exist_ok=True)
-    df.to_csv(STONES_FILE, index=False)
+    save_table(df, STONES_FILE)
 
 
-def normalize_excel(raw: pd.DataFrame) -> pd.DataFrame:
+def save_supplier_document(uploaded_file, batch_id: str) -> tuple[str, str]:
+    if uploaded_file is None:
+        return '', ''
+    safe_name = uploaded_file.name.replace('/', '_').replace('\\', '_')
+    path = DOC_DIR / f'{batch_id}__{safe_name}'
+    path.write_bytes(uploaded_file.getvalue())
+    return safe_name, str(path)
+
+
+def normalize_excel(raw: pd.DataFrame, upload_date: str, supplier_name: str, doc_name: str, doc_path: str, batch_id: str) -> pd.DataFrame:
     src = raw.copy()
     src.columns = [str(c).strip() for c in src.columns]
     lower = {str(c).strip().lower(): c for c in src.columns}
@@ -80,11 +105,16 @@ def normalize_excel(raw: pd.DataFrame) -> pd.DataFrame:
         'has_lab_document': [True] * len(src),
         'physically_received': [True] * len(src),
         'checked_by_kurgin': [True] * len(src),
+        'upload_date': [upload_date] * len(src),
+        'supplier_name': [supplier_name] * len(src),
+        'supplier_document_name': [doc_name] * len(src),
+        'supplier_document_path': [doc_path] * len(src),
+        'batch_id': [batch_id] * len(src),
         'notes_internal': ['uploaded_xlsx'] * len(src),
     })
 
     empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None'])
-    out.loc[empty_id, 'stone_id'] = [f'KRG-UP-{i+1:04d}' for i in range(empty_id.sum())]
+    out.loc[empty_id, 'stone_id'] = [f'{batch_id}-{i+1:04d}' for i in range(empty_id.sum())]
 
     empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None'])
     out.loc[empty_title, 'title'] = (
@@ -130,7 +160,7 @@ if password != ADMIN_PASSWORD:
 st.success('Админ-доступ открыт')
 st.warning('Публичный каталог должен показывать только eligible / available / confirmed камни.')
 
-tab1, tab2, tab3 = st.tabs(['Каталог', 'Загрузка .xlsx', 'Публичный preview'])
+tab1, tab2, tab3, tab4 = st.tabs(['Каталог', 'Загрузка .xlsx', 'Публичный preview', 'История загрузок'])
 
 with tab1:
     st.subheader('Каталог камней')
@@ -142,20 +172,50 @@ with tab1:
 
 with tab2:
     st.subheader('Загрузка Excel .xlsx')
-    uploaded = st.file_uploader('Файл .xlsx', type=['xlsx'])
+    col1, col2 = st.columns(2)
+    with col1:
+        upload_dt = st.date_input('Дата загрузки / партии', value=date.today())
+        supplier_name = st.text_input('Имя поставщика')
+    with col2:
+        supplier_document = st.file_uploader('Документ поставщика к этой загрузке', type=['pdf','xlsx','xls','docx','png','jpg','jpeg'])
+        uploaded = st.file_uploader('Файл камней .xlsx', type=['xlsx'])
+
+    notes = st.text_area('Внутренняя заметка по партии', height=80)
     mode = st.radio('Режим', ['Добавить к текущим', 'Заменить текущий каталог'], horizontal=True)
+
     if uploaded is not None:
+        if not supplier_name.strip():
+            st.error('Укажи имя поставщика перед сохранением.')
         try:
+            batch_id = f"BATCH-{str(upload_dt).replace('-', '')}-{supplier_name.strip().replace(' ', '_') or 'NO_SUPPLIER'}"
+            doc_name, doc_path = save_supplier_document(supplier_document, batch_id)
+
             raw = pd.read_excel(uploaded)
             st.write('Preview Excel')
             st.dataframe(raw.head(20), use_container_width=True)
-            normalized = normalize_excel(raw)
+
+            normalized = normalize_excel(raw, str(upload_dt), supplier_name.strip(), doc_name, doc_path, batch_id)
+            normalized['notes_internal'] = notes or 'uploaded_xlsx'
+
             st.write('После нормализации')
             st.dataframe(normalized.head(20), use_container_width=True)
-            if st.button('Сохранить .xlsx в каталог', type='primary'):
+
+            if st.button('Сохранить .xlsx в каталог', type='primary', disabled=not bool(supplier_name.strip())):
                 current = load_stones()
                 result = pd.concat([current, normalized], ignore_index=True) if mode == 'Добавить к текущим' else normalized
                 save_stones(result)
+
+                log = load_table(UPLOAD_LOG_FILE, LOG_COLUMNS)
+                new_log = pd.DataFrame([{
+                    'batch_id': batch_id,
+                    'upload_date': str(upload_dt),
+                    'supplier_name': supplier_name.strip(),
+                    'document_name': doc_name,
+                    'document_path': doc_path,
+                    'stones_count': len(normalized),
+                    'notes': notes,
+                }])
+                save_table(pd.concat([log, new_log], ignore_index=True), UPLOAD_LOG_FILE)
                 st.success(f'Сохранено камней: {len(normalized)}. Всего: {len(result)}')
         except Exception as exc:
             st.error(f'Ошибка загрузки Excel: {exc}')
@@ -165,3 +225,8 @@ with tab3:
     preview = public_preview(load_stones())
     st.dataframe(preview, use_container_width=True)
     st.metric('Публичных камней', len(preview))
+
+with tab4:
+    st.subheader('История загрузок')
+    log = load_table(UPLOAD_LOG_FILE, LOG_COLUMNS)
+    st.dataframe(log, use_container_width=True)
