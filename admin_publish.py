@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -61,17 +62,32 @@ def _get_sha(repo: str, path: str, token: str) -> str | None:
         raise
 
 
-def _publish_file(repo: str, path: str, content: str, message: str, token: str) -> None:
+def _publish_file(repo: str, path: str, content: str, message: str, token: str, max_attempts: int = 4) -> None:
     url = f'https://api.github.com/repos/{repo}/contents/{path}'
-    payload = {
-        'message': message,
-        'content': base64.b64encode(content.encode('utf-8')).decode('ascii'),
-        'branch': BRANCH,
-    }
-    sha = _get_sha(repo, path, token)
-    if sha:
-        payload['sha'] = sha
-    _request('PUT', url, token, payload)
+    encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        payload = {
+            'message': message,
+            'content': encoded,
+            'branch': BRANCH,
+        }
+        sha = _get_sha(repo, path, token)
+        if sha:
+            payload['sha'] = sha
+        try:
+            _request('PUT', url, token, payload)
+            return
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code == 409 and attempt < max_attempts:
+                time.sleep(0.8 * attempt)
+                continue
+            raise
+
+    if last_error:
+        raise last_error
 
 
 def _df_to_csv(df: pd.DataFrame, columns: list[str]) -> str:
@@ -112,7 +128,6 @@ def _stone_from_row(row: pd.Series) -> dict:
     for public_key, source_key in PUBLIC_ALIAS_FIELDS.items():
         stone[public_key] = _clean_value(row.get(source_key))
 
-    # Compatibility aliases for the public Streamlit catalog and future analytics.
     stone['karo_score'] = stone.get('karo_score')
     stone['KURGIN Score'] = stone.get('kurgin_score')
     stone['priceText'] = '' if stone.get('price') in [None, 0, '0'] else str(stone.get('price'))
@@ -188,5 +203,10 @@ def render_publish_tab() -> None:
             _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)
             _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)
             st.success('catalog.json опубликован в kurgin-data')
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                st.error('Ошибка публикации: GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код уже повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
+            else:
+                st.error(f'Ошибка публикации: HTTP Error {exc.code}: {exc.reason}')
         except Exception as exc:
             st.error(f'Ошибка публикации: {exc}')
