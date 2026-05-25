@@ -1,0 +1,4 @@
+batch_number,upload_date,supplier_name,stones_count,upload_confirmed,notes
+P-0001,2026-05-26,пробный,174,True,пробная загрузка
+P-0002,2026-05-26,пробный,174,True,
+P-0003,2026-05-26,проб,174,True,
