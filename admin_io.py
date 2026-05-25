@@ -19,6 +19,16 @@ STATE_COLS = ['current_status', 'batch_number', 'upload_date', 'supplier_name', 
 STONE_COLS = BASE_COLS + DETAIL_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = ['batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes']
 
+TEXT_COLS = [
+    'stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number',
+    'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements',
+    'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id',
+    'side_type', 'growth_method', *TAG_COLS, 'current_status', 'batch_number',
+    'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible',
+    'has_lab_document', 'physically_received', 'checked_by_kurgin',
+    'upload_confirmed', 'notes_internal'
+]
+
 ALIASES = {
     'stone_id': ['stone_id', 'stone id', 'id', 'sku', 'stock', 'stock #', 'stock id', 'stock_id', 'lot', 'lot no', 'lot number', 'sr no', 'no'],
     'title': ['title', 'name', 'description', 'stone', 'item', 'product', 'название', 'описание'],
@@ -29,7 +39,7 @@ ALIASES = {
     'lab': ['lab', 'laboratory', 'cert lab', 'certificate lab', 'grading lab', 'issuer', 'лаборатория'],
     'report_number': ['report_number', 'report number', 'report no', 'report #', 'report', 'certificate', 'certificate_number', 'certificate number', 'certificate no', 'cert', 'cert no', 'номер сертификата'],
     'price_rub': ['price_rub', 'price rub', 'price_rur', 'price rur', 'public price rub', 'price', 'rub', 'rur', 'цена', 'стоимость'],
-    'karo_score': ['karo_score', 'karo score', 'kurgin_score', 'kurgin score', 'kurgin score', 'score', 'karo', 'оценка'],
+    'karo_score': ['karo_score', 'karo score', 'kurgin_score', 'kurgin score', 'score', 'karo', 'оценка'],
     'section': ['section', 'catalog section', 'category', 'раздел'],
     'cut': ['cut', 'cut grade'],
     'polish': ['polish'],
@@ -77,10 +87,10 @@ def load_table(path: Path, columns: list[str]) -> pd.DataFrame:
 
 def save_table(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(exist_ok=True)
-    for col in STONE_COLS if path == STONES else BATCH_COLS:
+    columns = STONE_COLS if path == STONES else BATCH_COLS
+    for col in columns:
         if col not in df.columns:
             df[col] = ''
-    columns = STONE_COLS if path == STONES else BATCH_COLS
     df[columns].to_csv(path, index=False)
 
 
@@ -118,7 +128,7 @@ def pick_column(raw: pd.DataFrame, key: str) -> pd.Series:
         normalized_alias = key_name(alias)
         if normalized_alias in columns:
             return raw[columns[normalized_alias]].reset_index(drop=True)
-    return pd.Series([''] * len(raw))
+    return pd.Series([''] * len(raw), dtype='object')
 
 
 def clean_number(series: pd.Series) -> pd.Series:
@@ -139,6 +149,11 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out = pd.DataFrame({col: [''] * len(raw) for col in STONE_COLS})
     for col in BASE_COLS + DETAIL_COLS + TAG_COLS:
         out[col] = pick_column(raw, col)
+
+    for col in TEXT_COLS:
+        if col in out.columns:
+            out[col] = out[col].astype('object')
+
     out['current_status'] = 'available'
     out['batch_number'] = str(batch_number)
     out['upload_date'] = str(upload_date)
@@ -150,21 +165,28 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out['checked_by_kurgin'] = True
     out['upload_confirmed'] = True
     out['notes_internal'] = notes or 'uploaded_xlsx'
+
     for col in ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total']:
         out[col] = clean_number(out[col])
-    for col in ['shape']:
-        out[col] = out[col].apply(normalize_shape_value)
-    for col in TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type']:
-        out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': ''})
-    empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None'])
-    out.loc[empty_id, 'stone_id'] = [f'{batch_number}-{i + 1:04d}' for i in range(empty_id.sum())]
-    empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None'])
-    out.loc[empty_title, 'title'] = (
-        out.loc[empty_title, 'shape'].astype(str) + ' ' +
-        out.loc[empty_title, 'carat'].astype(str) + ' ' +
-        out.loc[empty_title, 'color'].astype(str) + ' ' +
-        out.loc[empty_title, 'clarity'].astype(str)
-    )
+    out['shape'] = out['shape'].apply(normalize_shape_value)
+
+    text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number']
+    for col in text_cleanup_cols:
+        out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': '', 'none': ''})
+
+    empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
+    if empty_id.any():
+        generated_ids = [f'{batch_number}-{i + 1:04d}' for i in range(int(empty_id.sum()))]
+        out.loc[empty_id, 'stone_id'] = generated_ids
+
+    empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
+    if empty_title.any():
+        out.loc[empty_title, 'title'] = (
+            out.loc[empty_title, 'shape'].astype(str) + ' ' +
+            out.loc[empty_title, 'carat'].astype(str) + ' ' +
+            out.loc[empty_title, 'color'].astype(str) + ' ' +
+            out.loc[empty_title, 'clarity'].astype(str)
+        )
     return out[STONE_COLS]
 
 
