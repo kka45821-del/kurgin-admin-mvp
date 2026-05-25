@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import pandas as pd
 
@@ -137,6 +138,23 @@ def clean_number(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors='coerce').fillna(0)
 
 
+def derive_diameter_from_measurements(value) -> float:
+    text = str(value or '').strip()
+    if not text or text.lower() in ['nan', 'none']:
+        return 0.0
+    numbers = re.findall(r'\d+(?:[\.,]\d+)?', text)
+    if len(numbers) < 2:
+        return 0.0
+    try:
+        first = float(numbers[0].replace(',', '.'))
+        second = float(numbers[1].replace(',', '.'))
+    except ValueError:
+        return 0.0
+    if first <= 0 or second <= 0:
+        return 0.0
+    return round((first + second) / 2, 3)
+
+
 def normalize_shape_value(value: str) -> str:
     text = str(value or '').strip()
     key = text.lower()
@@ -173,6 +191,12 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number']
     for col in text_cleanup_cols:
         out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': '', 'none': ''})
+
+    derived_diameter = out['measurements'].apply(derive_diameter_from_measurements)
+    missing_diameter = out['diameter'].le(0) & derived_diameter.gt(0)
+    missing_diameter_mm = out['diameter_mm'].le(0) & derived_diameter.gt(0)
+    out.loc[missing_diameter, 'diameter'] = derived_diameter[missing_diameter]
+    out.loc[missing_diameter_mm, 'diameter_mm'] = derived_diameter[missing_diameter_mm]
 
     empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
     if empty_id.any():
