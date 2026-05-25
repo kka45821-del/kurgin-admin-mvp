@@ -12,6 +12,22 @@ from admin_io import BATCH_COLS, STONE_COLS, load_batches, load_stones, public_p
 DATA_REPO = 'kka45821-del/kurgin-data'
 BRANCH = 'main'
 
+PUBLIC_ALIAS_FIELDS = {
+    'id': 'stone_id',
+    'score': 'karo_score',
+    'kurgin_score': 'karo_score',
+    'price': 'price_rub',
+    'public_price_rub': 'price_rub',
+    'report': 'report_number',
+    'availability': 'current_status',
+}
+
+IMPORTANT_CATALOG_FIELDS = [
+    'stone_id', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number',
+    'karo_score', 'price_rub', 'section', 'cut', 'polish', 'symmetry',
+    'fluorescence', 'measurements', 'diameter', 'diameter_mm', 'quantity',
+]
+
 
 def _token() -> str:
     try:
@@ -69,32 +85,71 @@ def _df_to_csv(df: pd.DataFrame, columns: list[str]) -> str:
 def _clean_value(value):
     if pd.isna(value):
         return None
-    if isinstance(value, (int, float, bool)):
+    if hasattr(value, 'item'):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        return round(value, 6)
     text = str(value).strip()
-    if text == '' or text.lower() in ['nan', 'none']:
+    if text == '' or text.lower() in ['nan', 'none', 'null']:
         return None
     return text
 
 
+def _stone_from_row(row: pd.Series) -> dict:
+    stone = {}
+    for col in STONE_COLS:
+        stone[col] = _clean_value(row.get(col))
+
+    for public_key, source_key in PUBLIC_ALIAS_FIELDS.items():
+        stone[public_key] = _clean_value(row.get(source_key))
+
+    # Compatibility aliases for the public Streamlit catalog and future analytics.
+    stone['karo_score'] = stone.get('karo_score')
+    stone['KURGIN Score'] = stone.get('kurgin_score')
+    stone['priceText'] = '' if stone.get('price') in [None, 0, '0'] else str(stone.get('price'))
+
+    return stone
+
+
 def _catalog_payload(df: pd.DataFrame) -> str:
     public = public_preview(df).copy()
-    stones = []
-    for _, row in public.iterrows():
-        stone = {}
-        for col in STONE_COLS:
-            stone[col] = _clean_value(row.get(col))
-        stone['id'] = stone.get('stone_id')
-        stone['score'] = stone.get('karo_score')
-        stone['price'] = stone.get('price_rub')
-        stones.append(stone)
+    stones = [_stone_from_row(row) for _, row in public.iterrows()]
     payload = {
         'source': 'KURGIN Admin',
         'updated_at': pd.Timestamp.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
         'count': len(stones),
+        'schema': {
+            'version': 'catalog_mvp_v2',
+            'score_public_name': 'KURGIN Score',
+            'score_field': 'karo_score',
+            'includes_full_catalog_fields': True,
+        },
         'stones': stones,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _field_coverage(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    if df.empty:
+        return pd.DataFrame(columns=['field', 'filled', 'empty'])
+    for field in IMPORTANT_CATALOG_FIELDS:
+        if field not in df.columns:
+            rows.append({'field': field, 'filled': 0, 'empty': len(df)})
+            continue
+        series = df[field]
+        empty = series.isna() | series.astype(str).str.strip().isin(['', 'nan', 'None', 'none', '0'])
+        rows.append({'field': field, 'filled': int((~empty).sum()), 'empty': int(empty.sum())})
+    return pd.DataFrame(rows)
 
 
 def render_publish_tab() -> None:
@@ -103,14 +158,18 @@ def render_publish_tab() -> None:
 
     stones = load_stones()
     batches = load_batches()
+    public = public_preview(stones)
     catalog_json = _catalog_payload(stones)
 
     st.metric('Всего камней в админке', len(stones))
-    st.metric('Публичных камней для catalog.json', len(public_preview(stones)))
+    st.metric('Публичных камней для catalog.json', len(public))
     st.metric('Партий', len(batches))
 
     st.write('Preview публичных камней')
-    st.dataframe(public_preview(stones).head(20), use_container_width=True)
+    st.dataframe(public.head(20), use_container_width=True)
+
+    with st.expander('Покрытие важных полей перед публикацией', expanded=False):
+        st.dataframe(_field_coverage(public), use_container_width=True)
 
     st.download_button('Скачать catalog.json', catalog_json, file_name='catalog.json')
     st.download_button('Скачать stones.csv', _df_to_csv(stones, STONE_COLS), file_name='stones.csv')
