@@ -1,36 +1,20 @@
-import os
-
 import pandas as pd
 import streamlit as st
 
+from admin_auth import logout_button, require_admin_login
 from admin_batches import render_batches_tab
 from admin_io import load_batches, load_stones, save_stones
 from admin_log import load_admin_actions, write_admin_action
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
-from admin_publication_rules import public_preview
+from admin_page_settings import render_page_settings
+from admin_publication_rules import public_preview, publication_summary
 from admin_publish import render_publish_tab
 from admin_upload import render_upload_tab
 from admin_validation import validate_catalog
 
 st.set_page_config(page_title="KURGIN Admin MVP", page_icon="◇", layout="wide")
 
-
-def admin_password() -> str:
-    try:
-        secret_password = st.secrets.get("KURGIN_ADMIN_PASSWORD", "")
-    except Exception:
-        secret_password = ""
-    return secret_password or os.getenv("KURGIN_ADMIN_PASSWORD", "")
-
-
-ADMIN_PASSWORD = admin_password()
-
-BADGE_STYLE = {
-    ACTIVE: "#0f7b0f",
-    STUB: "#8a6d00",
-    FUTURE: "#666666",
-    RESTRICTED: "#9b1c1c",
-}
+BADGE_STYLE = {ACTIVE: "#0f7b0f", STUB: "#8a6d00", FUTURE: "#666666", RESTRICTED: "#9b1c1c"}
 
 
 def status_label(status: str) -> str:
@@ -58,38 +42,37 @@ def render_header(section: dict, item: dict | None):
 def render_stub_page(section: dict, item: dict | None):
     render_header(section, item)
     st.info("Раздел создан в структуре админки, но рабочая логика ещё не подключена.")
-    st.markdown("### Что здесь будет")
-    st.write("- управление данными и статусами раздела;")
-    st.write("- проверки перед включением функции;")
-    st.write("- журнал изменений и понятные предупреждения;")
-    st.write("- связь с публичной платформой только после отдельной проверки.")
+    st.write("- данные и статусы раздела будут подключены отдельно;")
+    st.write("- future/restricted зоны не считаются рабочими функциями;")
+    st.write("- публичная платформа не меняется без отдельной проверки.")
 
 
 def render_future_page(section: dict, item: dict | None):
     render_header(section, item)
-    st.info("Этот раздел не входит в ближайший MVP. Он сохранён в структуре, чтобы не потерять будущую архитектуру.")
+    st.info("Раздел не входит в ближайший MVP. Он сохранён в структуре, чтобы не потерять будущую архитектуру.")
 
 
 def render_restricted_page(section: dict, item: dict | None):
     render_header(section, item)
-    st.error("Раздел ограничен. Он связан с юридическими, платёжными, пользовательскими или операционными рисками.")
+    st.error("Раздел ограничен: юридические, платёжные, пользовательские или операционные риски.")
     st.write("Не включать как рабочую функцию без отдельной проверки.")
-    st.write("Нельзя смешивать: оплату и sold, заявку и заказ, поставщика и публичного продавца, Analyzer и сертификат, Index и точную цену.")
 
 
-def render_dashboard(item: dict | None):
+def render_dashboard():
     stones = load_stones()
     public = public_preview(stones)
+    summary = publication_summary(stones)
     batches = load_batches()
     actions = load_admin_actions()
     critical, warnings = validate_catalog(stones) if not stones.empty else (pd.DataFrame(), pd.DataFrame())
 
     st.markdown("### Общий статус")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Всего камней", len(stones))
-    c2.metric("Публичных", len(public))
-    c3.metric("Партий", len(batches))
-    c4.metric("Действий в журнале", len(actions))
+    c2.metric("Visible", summary.get("visible", len(public)))
+    c3.metric("Sellable", summary.get("sellable", 0))
+    c4.metric("Партий", len(batches))
+    c5.metric("Действий", len(actions))
 
     st.markdown("### Ошибки и риски")
     if critical.empty:
@@ -97,111 +80,95 @@ def render_dashboard(item: dict | None):
     else:
         st.error("Есть критические ошибки каталога.")
         st.dataframe(critical, use_container_width=True)
-
     if not warnings.empty:
-        st.warning("Есть предупреждения. Для MVP допустимо, если это цена по запросу или будущие поля.")
+        st.warning("Есть предупреждения. Для MVP допустимо, если это цена по запросу или future-поля.")
         st.dataframe(warnings, use_container_width=True)
 
     st.markdown("### Быстрые действия")
-    st.write("- Каталог → Импорт Excel")
-    st.write("- Каталог → Публичный preview")
-    st.write("- Каталог → Publication Gate")
+    st.write("Каталог → Импорт Excel → Публичный preview → Publication Gate")
 
 
 def render_catalog_page(item: dict | None):
     item_id = item.get("id") if item else "catalog_all"
 
     if item_id == "catalog_all":
-        st.markdown("### Все камни")
         df = load_stones()
         st.caption("Рабочая таблица каталога. Массово редактируй только понятные поля.")
         edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
         if st.button("Сохранить каталог", type="primary"):
             save_stones(edited)
-            write_admin_action(
-                action="catalog_save",
-                entity="stones.csv",
-                rows_count=len(edited),
-                source="app.catalog_all",
-                details="Ручное сохранение таблицы каталога",
-            )
+            write_admin_action("catalog_save", "stones.csv", len(edited), "app.catalog_all", details="Ручное сохранение таблицы каталога")
             st.success("Каталог сохранён")
         return
 
     if item_id == "catalog_import":
         render_upload_tab()
         return
-
     if item_id == "catalog_batches":
         render_batches_tab()
         return
-
     if item_id == "catalog_preview":
-        st.markdown("### Публичный preview")
         preview = public_preview(load_stones())
         st.metric("Публичных камней", len(preview))
         st.dataframe(preview, use_container_width=True)
         return
-
     if item_id == "catalog_publication":
         render_publish_tab()
         return
-
     if item_id == "catalog_sections":
-        st.markdown("### Разделы каталога")
-        df = load_stones()
-        public = public_preview(df)
-        if public.empty:
-            st.info("Пока нет публичных камней.")
+        public = public_preview(load_stones())
+        if public.empty or "section" not in public.columns:
+            st.info("Пока нет публичных камней или поля section.")
             return
-        if "section" in public.columns:
-            data = public["section"].fillna("не задано").value_counts().rename_axis("section").reset_index(name="count")
-            st.dataframe(data, use_container_width=True)
-        st.write("Правило MVP: 1.00–2.99 ct → основной каталог, 3.00+ ct → крупные. Остальные разделы подключаются позже.")
+        data = public["section"].fillna("не задано").value_counts().rename_axis("section").reset_index(name="count")
+        st.dataframe(data, use_container_width=True)
+        st.write("MVP: 1.00–2.99 ct → основной; 3.00+ ct → крупные. Остальные разделы позже.")
         return
-
     if item_id == "catalog_statuses":
-        st.markdown("### Статусы камней")
         df = load_stones()
         if df.empty or "current_status" not in df.columns:
             st.info("Статусы пока не найдены.")
             return
         st.dataframe(df["current_status"].fillna("не задано").value_counts().rename_axis("status").reset_index(name="count"), use_container_width=True)
         return
-
     if item_id == "catalog_prices":
-        st.markdown("### Цены")
         df = load_stones()
-        if df.empty or "price_rub" not in df.columns:
-            st.info("Ценовые поля пока не найдены.")
-            return
-        price = pd.to_numeric(df["price_rub"], errors="coerce").fillna(0)
-        c1, c2 = st.columns(2)
+        price = pd.to_numeric(df.get("price_rub", pd.Series(dtype=float)), errors="coerce").fillna(0)
+        confirmed = df.get("price_confirmed", pd.Series(dtype=str)).astype(str).str.lower().isin(["true", "1", "yes", "да"]) if not df.empty else pd.Series(dtype=bool)
+        c1, c2, c3 = st.columns(3)
         c1.metric("С ценой", int((price > 0).sum()))
-        c2.metric("По запросу / без цены", int((price <= 0).sum()))
-        st.warning("Цена 0 допустима для MVP как 'по запросу', но такие камни не готовы для ценового индекса.")
+        c2.metric("Цена подтверждена", int(confirmed.sum()))
+        c3.metric("По запросу / без цены", int((price <= 0).sum()))
+        st.warning("price_rub=0 допустим только как request_price / checkout disabled. Для sellable нужна подтверждённая цена.")
         return
 
     render_stub_page({"title": "Каталог", "description": "Каталог"}, item)
 
 
+def render_settings_page(item: dict | None):
+    item_id = item.get("id") if item else "settings_mode"
+    if item_id == "settings_page_settings":
+        render_page_settings()
+    elif item_id == "settings_logs":
+        st.markdown("### Журнал действий администратора")
+        st.dataframe(load_admin_actions().sort_values("created_at", ascending=False), use_container_width=True)
+    else:
+        st.write("Текущий MVP: каталог публикуется через kurgin-data, публичный сайт читает catalog.json. Feature flags пока являются каркасом.")
+
+
 def render_active_page(section: dict, item: dict | None):
     render_header(section, item)
     section_id = section.get("id")
-    item_id = item.get("id") if item else ""
     if section_id == "dashboard":
-        render_dashboard(item)
+        render_dashboard()
     elif section_id == "catalog":
         render_catalog_page(item)
-    elif section_id == "content":
-        st.write("Здесь будет управление текстами публичных страниц. Сейчас фиксируется структура, без риска сломать рабочий каталог.")
+    elif section_id == "settings":
+        render_settings_page(item)
     elif section_id == "navigation":
         st.write("Текущая нижняя панель публичного сайта: KURGIN, Инструменты, Каталог, Избранное, Корзина, Профиль.")
-    elif section_id == "settings" and item_id == "settings_logs":
-        st.markdown("### Журнал действий администратора")
-        st.dataframe(load_admin_actions().sort_values("created_at", ascending=False), use_container_width=True)
-    elif section_id == "settings":
-        st.write("Текущий MVP-режим: данные каталога публикуются через kurgin-data, публичный сайт читает catalog.json.")
+    elif section_id == "content":
+        st.write("Здесь будет управление текстами публичных страниц. Сейчас это каркас без изменения публичного сайта.")
     elif section_id == "requests":
         render_stub_page(section, item)
     else:
@@ -218,28 +185,11 @@ def render_page(section: dict, item: dict | None):
         render_future_page(section, item)
     elif status == RESTRICTED:
         render_restricted_page(section, item)
-    else:
-        st.info("Раздел скрыт или не настроен.")
 
-
-if "login" not in st.session_state:
-    st.session_state.login = False
 
 st.title("KURGIN Admin MVP")
-st.caption("Одна рабочая админка: каталог, импорт Excel, партии, preview и публикация. Будущие зоны показаны как каркас, но не включены как рабочие функции.")
-
-if not ADMIN_PASSWORD:
-    st.error("KURGIN_ADMIN_PASSWORD не задан. Для запуска админки добавь пароль в Streamlit secrets или переменную окружения.")
-    st.stop()
-
-if not st.session_state.login:
-    password = st.text_input("Пароль", type="password")
-    if st.button("Войти", type="primary"):
-        st.session_state.login = password == ADMIN_PASSWORD
-        if st.session_state.login:
-            write_admin_action(action="admin_login", entity="session", source="app.login", details="Успешный вход в админку")
-        st.rerun()
-    st.stop()
+st.caption("Одна закрытая админка: импорт Excel, каталог, preview, publication gate, настройки и audit log.")
+require_admin_login("login")
 
 with st.sidebar:
     st.header("KURGIN Admin")
@@ -256,10 +206,7 @@ with st.sidebar:
         selected_item = items[item_labels.index(selected_item_label)]
 
     st.divider()
-    if st.button("Выйти"):
-        write_admin_action(action="admin_logout", entity="session", source="app.sidebar", details="Выход из админки")
-        st.session_state.login = False
-        st.rerun()
-    st.caption("Ограниченные и будущие функции не считаются рабочими.")
+    logout_button("login")
+    st.caption("Future/restricted разделы не являются рабочими функциями.")
 
 render_page(selected_section, selected_item)
