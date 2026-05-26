@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from admin_io import load_stones
+from admin_log import write_admin_action
 from admin_pricing_rules import calculate_price
 
 
@@ -21,6 +22,7 @@ PREVIEW_COLUMNS = [
     "calculated_price_rub",
     "score_coefficient",
     "public_action",
+    "rate_warning",
     "warnings",
     "errors",
 ]
@@ -46,6 +48,29 @@ def _format_tuple(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return "; ".join(str(item) for item in value if str(item))
     return str(value)
+
+
+def _count_status(summary: pd.Series, *statuses: str) -> int:
+    return int(sum(int(summary.get(status, 0)) for status in statuses))
+
+
+def _preview_summary(preview: pd.DataFrame) -> dict[str, int]:
+    statuses = preview["price_status"].fillna("missing").astype(str).value_counts()
+    warnings = preview["warnings"].fillna("").astype(str).str.strip()
+    errors = preview["errors"].fillna("").astype(str).str.strip()
+    rate_warning = preview["rate_warning"].fillna(False).astype(bool)
+
+    return {
+        "total": int(len(preview)),
+        "calculated": _count_status(statuses, "calculated"),
+        "request_price": _count_status(statuses, "request_price"),
+        "score_required": _count_status(statuses, "score_required"),
+        "future_scope": _count_status(statuses, "future_scope"),
+        "blocked_missing": _count_status(statuses, "blocked", "missing"),
+        "rows_with_warnings": int(warnings.ne("").sum()),
+        "rows_with_errors": int(errors.ne("").sum()),
+        "rate_warning": int(rate_warning.sum()),
+    }
 
 
 def _build_pricing_preview(
@@ -79,6 +104,7 @@ def _build_pricing_preview(
                 "calculated_price_rub": result.get("calculated_price_rub"),
                 "score_coefficient": result.get("score_coefficient"),
                 "public_action": result.get("public_action", ""),
+                "rate_warning": bool(result.get("rate_warning", False)),
                 "warnings": _format_tuple(result.get("warnings", ())),
                 "errors": _format_tuple(result.get("errors", ())),
             }
@@ -106,7 +132,8 @@ def render_pricing_tab() -> None:
     c2.metric("С текущей ценой", int((price > 0).sum()))
     c3.metric("Цена подтверждена", int(confirmed.sum()))
 
-    st.warning("Preview не меняет stones.csv. Для sellable позже потребуется отдельное ручное подтверждение цены и publication gate.")
+    st.warning("Preview не сохраняет рассчитанные цены. Для публикации нужен отдельный шаг подтверждения.")
+    st.info("Preview не меняет stones.csv. Для sellable позже потребуется отдельное ручное подтверждение цены и publication gate.")
 
     uploaded_file = st.file_uploader("Price table Excel/CSV", type=["xlsx", "xls", "csv"])
     col_rate, col_ref = st.columns(2)
@@ -147,9 +174,42 @@ def render_pricing_tab() -> None:
             rate_warning_threshold_rub=threshold,
             global_price_adjustment_percent=adjustment,
         )
+        summary = _preview_summary(preview)
+
+        st.markdown("#### Pricing summary")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Всего строк", summary["total"])
+        m2.metric("Calculated", summary["calculated"])
+        m3.metric("Request price", summary["request_price"])
+        m4.metric("Score required", summary["score_required"])
+
+        m5, m6, m7, m8 = st.columns(4)
+        m5.metric("Future scope", summary["future_scope"])
+        m6.metric("Blocked / missing", summary["blocked_missing"])
+        m7.metric("Rows with warnings", summary["rows_with_warnings"])
+        m8.metric("Rows with errors", summary["rows_with_errors"])
+
+        st.metric("Rate warning", summary["rate_warning"])
+
         st.markdown("#### Calculated price preview")
         st.dataframe(preview, use_container_width=True)
 
         status_counts = preview["price_status"].fillna("missing").value_counts().rename_axis("price_status").reset_index(name="count")
         st.markdown("#### Price status summary")
         st.dataframe(status_counts, use_container_width=True)
+
+        details = (
+            f"manual_usd_rub_rate={manual_rate}; "
+            f"reference_cbr_usd_rub_rate={reference_rate}; "
+            f"rate_warning_threshold_rub={threshold}; "
+            f"global_price_adjustment_percent={adjustment}; "
+            f"summary={summary}"
+        )
+        write_admin_action(
+            action="pricing_preview_run",
+            entity="pricing_engine",
+            rows_count=len(preview),
+            source="admin_pricing",
+            details=details,
+        )
+        st.caption("Audit log: pricing_preview_run записан. Цены при этом не сохранены.")
