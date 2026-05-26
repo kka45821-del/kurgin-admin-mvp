@@ -67,6 +67,43 @@ PRICED_BATCH_SECTIONS = {"main", "large"}
 REQUEST_PRICE_STATUSES = {"", "missing", "request_price", "score_required", "future_scope", "needs_review", "index_pending", "index_suggested"}
 ROUND_SHAPES = {"round", "round brilliant", "round brilliant cut", "rbc", "круг"}
 
+PRICE_TEMPLATE_BANDS = [
+    (1.0, 1.5, True),
+    (1.5, 2.0, True),
+    (2.0, 2.5, True),
+    (2.5, 3.0, True),
+    (3.0, 3.5, True),
+    (3.5, 4.0, True),
+    (4.0, 4.5, True),
+    (4.5, 5.0, True),
+    (5.0, 5.01, False),
+]
+
+# Source: PRICE FOR KARO от рави.xlsx, pasted by user.
+# Values are USD per carat. 0 means no price is set and Pricing Engine returns request_price.
+PRICE_TEMPLATE_VALUES: dict[tuple[str, str], list[int]] = {
+    ("D", "IF"): [250, 380, 480, 0, 0, 0, 0, 0, 0],
+    ("D", "VVS1"): [125, 150, 170, 210, 245, 0, 325, 0, 0],
+    ("D", "VVS2"): [110, 115, 120, 125, 135, 145, 160, 170, 230],
+    ("D", "VS1"): [100, 100, 105, 115, 125, 130, 0, 0, 0],
+    ("D", "VS2"): [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ("E", "IF"): [185, 0, 0, 0, 0, 0, 0, 0, 0],
+    ("E", "VVS1"): [120, 145, 150, 160, 165, 0, 0, 0, 0],
+    ("E", "VVS2"): [105, 110, 105, 100, 100, 0, 0, 0, 0],
+    ("E", "VS1"): [95, 98, 98, 98, 98, 100, 100, 105, 105],
+    ("E", "VS2"): [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ("F", "IF"): [150, 150, 0, 0, 0, 0, 0, 0, 0],
+    ("F", "VVS1"): [115, 135, 145, 155, 155, 0, 0, 175, 170],
+    ("F", "VVS2"): [100, 100, 100, 100, 100, 100, 105, 105, 102],
+    ("F", "VS1"): [95, 95, 95, 95, 95, 98, 100, 100, 100],
+    ("F", "VS2"): [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ("G", "IF"): [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ("G", "VVS1"): [0, 0, 110, 0, 0, 0, 0, 0, 0],
+    ("G", "VVS2"): [0, 0, 0, 0, 95, 0, 0, 0, 100],
+    ("G", "VS1"): [0, 95, 95, 0, 95, 0, 0, 0, 98],
+    ("G", "VS2"): [0, 0, 0, 0, 0, 0, 0, 0, 0],
+}
+
 
 def _read_price_table(uploaded_file: Any) -> pd.DataFrame:
     name = str(getattr(uploaded_file, "name", "")).lower()
@@ -243,56 +280,42 @@ def _render_priced_batch_candidates(stones: pd.DataFrame) -> None:
 
 
 def _price_table_template_frame() -> pd.DataFrame:
-    bands_by_section = {
-        "main": [(1.0, 1.5), (1.5, 2.0), (2.0, 2.5), (2.5, 3.0)],
-        "large": [(3.0, 4.0), (4.0, 5.0)],
-    }
-    colors = ["D", "E", "F", "G"]
-    clarities = ["VVS1", "VVS2", "VS1", "VS2"]
-    rows: list[dict[str, Any]] = [
-        {
-            "section": "main",
-            "carat_band_from": 1.0,
-            "carat_band_to": 1.5,
-            "color": "D",
-            "clarity": "VVS1",
-            "base_price_usd_per_carat": 100,
-            "is_active": False,
-        }
-    ]
-
-    for section, bands in bands_by_section.items():
-        for band_from, band_to in bands:
-            for color in colors:
-                for clarity in clarities:
-                    rows.append(
-                        {
-                            "section": section,
-                            "carat_band_from": band_from,
-                            "carat_band_to": band_to,
-                            "color": color,
-                            "clarity": clarity,
-                            "base_price_usd_per_carat": "",
-                            "is_active": True,
-                        }
-                    )
+    rows: list[dict[str, Any]] = []
+    for (color, clarity), values in PRICE_TEMPLATE_VALUES.items():
+        for index, value in enumerate(values):
+            band_from, band_to, active_band = PRICE_TEMPLATE_BANDS[index]
+            rows.append(
+                {
+                    "section": "",
+                    "carat_band_from": band_from,
+                    "carat_band_to": band_to,
+                    "color": color,
+                    "clarity": clarity,
+                    "base_price_usd_per_carat": int(value or 0),
+                    "is_active": bool(active_band),
+                }
+            )
     return pd.DataFrame(rows, columns=PRICE_TABLE_TEMPLATE_COLUMNS)
 
 
-def _price_table_template_xlsx() -> bytes:
+def price_table_template_bytes() -> bytes:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        _price_table_template_frame().to_excel(writer, index=False, sheet_name="price_table")
+        _price_table_template_frame().to_excel(writer, index=False, sheet_name="KURGIN_Price_Table")
     output.seek(0)
     return output.getvalue()
 
 
 def _render_price_table_template_download() -> None:
     st.markdown("#### Price table template")
-    st.warning("Значения в price table — USD за карат, не итоговая цена камня. Итоговая цена считается Pricing Engine.")
+    st.warning(
+        "Значения в price table — USD за карат. Пустые значения заменены на 0. "
+        "0 означает, что цена не задана и камень уйдёт в request_price. "
+        "Итоговая цена считается Pricing Engine."
+    )
     st.download_button(
-        label="Скачать шаблон price table",
-        data=_price_table_template_xlsx(),
+        label="Скачать price table template",
+        data=price_table_template_bytes(),
         file_name="kurgin_price_table_template.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -583,4 +606,4 @@ def render_pricing_tab() -> None:
         if confirmed_count > 0:
             st.success(f"Подтверждено цен: {confirmed_count}. catalog.json не опубликован; checkout не включён.")
         else:
-            st.error("Не удалось подтвердить выбранные цены. Проверь stone_id и preview.")
+            st.error("Не удалось подтвердить выбранные цены. Провь stone_id и preview.")
