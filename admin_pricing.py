@@ -180,6 +180,20 @@ def _effective_section(stones: pd.DataFrame) -> pd.Series:
     return section.mask(section.eq(""), inferred)
 
 
+def _effective_section_for_stone_dict(stone_dict: dict[str, Any]) -> str:
+    raw_section = stone_dict.get("section")
+    raw_text = "" if raw_section is None else str(raw_section).strip()
+    if raw_text and raw_text.lower() not in {"nan", "none", "null"}:
+        return raw_text
+
+    carat = pd.to_numeric(pd.Series([stone_dict.get("carat")]), errors="coerce").fillna(0).iloc[0]
+    if 1.0 <= float(carat) < 3.0:
+        return "main"
+    if float(carat) >= 3.0:
+        return "large"
+    return ""
+
+
 def _is_colored_mask(stones: pd.DataFrame) -> pd.Series:
     is_colored = _bool_series(stones, "is_colored")
     color_type = _text_series(stones, "color_type").ne("")
@@ -355,6 +369,9 @@ def _build_pricing_preview(
     rows: list[dict[str, Any]] = []
     for _, stone in stones.iterrows():
         stone_dict = stone.to_dict()
+        effective_section = _effective_section_for_stone_dict(stone_dict)
+        if effective_section:
+            stone_dict["section"] = effective_section
         result = calculate_price(
             stone=stone_dict,
             price_table=price_table,
@@ -472,6 +489,7 @@ def render_pricing_tab() -> None:
     _render_priced_batch_candidates(stones)
     _render_price_table_template_download()
 
+    st.info("Если section пустой, Pricing Preview временно использует carat-rule: 1.00–2.99 ct = main, 3.00+ ct = large. В stones.csv это не сохраняется.")
     st.warning("Preview не сохраняет рассчитанные цены. Для публикации нужен отдельный шаг подтверждения.")
     st.info("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json. Для сайта нужен отдельный Publication Gate.")
 
@@ -606,4 +624,4 @@ def render_pricing_tab() -> None:
         if confirmed_count > 0:
             st.success(f"Подтверждено цен: {confirmed_count}. catalog.json не опубликован; checkout не включён.")
         else:
-            st.error("Не удалось подтвердить выбранные цены. Провь stone_id и preview.")
+            st.error("Не удалось подтвердить выбранные цены. Проверь stone_id и preview.")
