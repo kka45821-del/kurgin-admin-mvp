@@ -29,6 +29,19 @@ IMPORTANT_CATALOG_FIELDS = [
     'fluorescence', 'measurements', 'diameter', 'diameter_mm', 'quantity',
 ]
 
+SECTION_ALIASES = {
+    'main': 'main', 'основной': 'main', 'основной каталог': 'main',
+    'large': 'large', 'крупные': 'large',
+    'medium': 'medium', 'средние': 'medium',
+    'small': 'small', 'мелкие': 'small',
+    'colored': 'colored', 'цветные': 'colored',
+    'side': 'side', 'боковые': 'side',
+    'pairs': 'pairs', 'парные': 'pairs',
+    'exclusive': 'exclusive', 'эксклюзив': 'exclusive',
+}
+
+MANUAL_SECTIONS = {'colored', 'side', 'pairs', 'exclusive'}
+
 
 def _token() -> str:
     try:
@@ -120,10 +133,55 @@ def _clean_value(value):
     return text
 
 
+def _safe_float(value, default=0.0) -> float:
+    cleaned = _clean_value(value)
+    if cleaned is None:
+        return default
+    try:
+        return float(str(cleaned).replace(' ', '').replace(',', '.'))
+    except (TypeError, ValueError):
+        return default
+
+
+def _bool_value(value) -> bool:
+    cleaned = _clean_value(value)
+    if isinstance(cleaned, bool):
+        return cleaned
+    return str(cleaned or '').strip().lower() in ['1', 'true', 'yes', 'y', 'да']
+
+
+def _normalize_section(value) -> str:
+    cleaned = _clean_value(value)
+    if cleaned is None:
+        return ''
+    return SECTION_ALIASES.get(str(cleaned).strip().lower(), '')
+
+
+def _section_for_row(row: pd.Series) -> str:
+    explicit = _normalize_section(row.get('section'))
+    if explicit in MANUAL_SECTIONS:
+        return explicit
+
+    if _bool_value(row.get('is_colored')):
+        return 'colored'
+
+    carat = _safe_float(row.get('carat'))
+    if carat < 0.30:
+        return 'small'
+    if carat < 1.00:
+        return 'medium'
+    if carat < 3.00:
+        return 'main'
+    return 'large'
+
+
 def _stone_from_row(row: pd.Series) -> dict:
     stone = {}
     for col in STONE_COLS:
         stone[col] = _clean_value(row.get(col))
+
+    section = _section_for_row(row)
+    stone['section'] = section
 
     for public_key, source_key in PUBLIC_ALIAS_FIELDS.items():
         stone[public_key] = _clean_value(row.get(source_key))
@@ -147,6 +205,7 @@ def _catalog_payload(df: pd.DataFrame) -> str:
             'score_public_name': 'KURGIN Score',
             'score_field': 'karo_score',
             'includes_full_catalog_fields': True,
+            'section_autofill': True,
         },
         'stones': stones,
     }
@@ -161,10 +220,21 @@ def _field_coverage(df: pd.DataFrame) -> pd.DataFrame:
         if field not in df.columns:
             rows.append({'field': field, 'filled': 0, 'empty': len(df)})
             continue
-        series = df[field]
-        empty = series.isna() | series.astype(str).str.strip().isin(['', 'nan', 'None', 'none', '0'])
+        if field == 'section':
+            calculated = df.apply(_section_for_row, axis=1)
+            empty = calculated.astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
+        else:
+            series = df[field]
+            empty = series.isna() | series.astype(str).str.strip().isin(['', 'nan', 'None', 'none', '0'])
         rows.append({'field': field, 'filled': int((~empty).sum()), 'empty': int(empty.sum())})
     return pd.DataFrame(rows)
+
+
+def _section_summary(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=['section', 'count'])
+    calculated = df.apply(_section_for_row, axis=1)
+    return calculated.value_counts().rename_axis('section').reset_index(name='count')
 
 
 def render_publish_tab() -> None:
@@ -182,6 +252,9 @@ def render_publish_tab() -> None:
 
     st.write('Preview публичных камней')
     st.dataframe(public.head(20), use_container_width=True)
+
+    with st.expander('Распределение по разделам перед публикацией', expanded=True):
+        st.dataframe(_section_summary(public), use_container_width=True)
 
     with st.expander('Покрытие важных полей перед публикацией', expanded=False):
         st.dataframe(_field_coverage(public), use_container_width=True)
