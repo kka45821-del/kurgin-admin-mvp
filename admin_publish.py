@@ -257,6 +257,7 @@ def render_publish_tab() -> None:
     batches = load_batches()
     public = public_preview(stones)
     catalog_json = _catalog_payload(stones)
+    catalog_payload = json.loads(catalog_json)
 
     st.metric('Всего камней в админке', len(stones))
     st.metric('Публичных камней для catalog.json', len(public))
@@ -282,22 +283,44 @@ def render_publish_tab() -> None:
 
     confirm = st.checkbox('Подтверждаю публикацию catalog.json в kurgin-data')
     if st.button('Опубликовать catalog.json', type='primary', disabled=not confirm):
+        failed_step = ''
+        status_box = st.empty()
+        status_box.info('Публикация началась')
+        steps_box = st.container()
+
+        publish_steps = [
+            ('1/4 catalog.json', lambda: _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)),
+            ('2/4 data/catalog.json', lambda: _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)),
+            ('3/4 stones.csv', lambda: _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)),
+            ('4/4 upload_batches.csv', lambda: _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)),
+        ]
+
         try:
-            _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)
-            _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)
-            _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)
-            _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)
+            with steps_box:
+                for step_label, publish_action in publish_steps:
+                    failed_step = step_label
+                    st.write(step_label)
+                    publish_action()
+                    st.success(f'{step_label} опубликован')
+
+            status_box.success('Публикация завершена')
+            updated_at = catalog_payload.get('updated_at', '')
+            count = catalog_payload.get('count', 0)
             write_admin_action(
                 action='publish_catalog_json',
                 entity='kurgin-data/catalog.json',
                 rows_count=len(public),
                 source='admin_publish',
                 result='success',
-                details='Опубликованы catalog.json, data/catalog.json, stones.csv, upload_batches.csv',
+                details=(
+                    'Опубликованы catalog.json, data/catalog.json, stones.csv, upload_batches.csv; '
+                    f'updated_at={updated_at}; count={count}'
+                ),
             )
-            st.success('catalog.json опубликован в kurgin-data')
+            st.success('catalog.json опубликован')
+            st.info(f'updated_at: {updated_at}\n\ncount: {count}')
         except urllib.error.HTTPError as exc:
-            details = f'HTTP Error {exc.code}: {exc.reason}'
+            details = f'failed_step={failed_step}; HTTP Error {exc.code}: {exc.reason}'
             write_admin_action(
                 action='publish_catalog_json',
                 entity='kurgin-data/catalog.json',
@@ -306,17 +329,19 @@ def render_publish_tab() -> None:
                 result='error',
                 details=details,
             )
+            status_box.error('Публикация остановлена')
+            st.error(f'Ошибка публикации на шаге {failed_step}: HTTP Error {exc.code}: {exc.reason}')
             if exc.code == 409:
-                st.error('Ошибка публикации: GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код уже повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
-            else:
-                st.error(f'Ошибка публикации: {details}')
+                st.warning('GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
         except Exception as exc:
+            details = f'failed_step={failed_step}; {exc}'
             write_admin_action(
                 action='publish_catalog_json',
                 entity='kurgin-data/catalog.json',
                 rows_count=len(public),
                 source='admin_publish',
                 result='error',
-                details=str(exc),
+                details=details,
             )
-            st.error(f'Ошибка публикации: {exc}')
+            status_box.error('Публикация остановлена')
+            st.error(f'Ошибка публикации на шаге {failed_step}: {exc}')
