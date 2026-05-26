@@ -4,6 +4,12 @@ from admin_pricing_rules import (
     score_coefficient,
     validate_round_main_large_score,
 )
+from admin_upload import score_gate_errors
+
+try:
+    import pandas as pd
+except ImportError as exc:
+    raise SystemExit("pandas is required to run this smoke check") from exc
 
 
 PRICE_TABLE = [
@@ -28,6 +34,13 @@ PRICE_TABLE = [
 ]
 
 
+def assert_score_gate_error_count(rows, expected_count: int, expected_section: str | None = None) -> None:
+    errors = score_gate_errors(pd.DataFrame(rows))
+    assert len(errors) == expected_count, errors.to_dict("records")
+    if expected_section is not None:
+        assert str(errors.iloc[0]["section"]) == expected_section, errors.to_dict("records")
+
+
 def run() -> None:
     assert score_coefficient(98.5) == 1.7
     print("OK: score_coefficient")
@@ -46,7 +59,67 @@ def run() -> None:
     )
     assert blocked["blocked"] is True
     assert blocked["status"] == "score_required"
-    print("OK: round score gate")
+    print("OK: round main score gate")
+
+    blocked_large = validate_round_main_large_score(
+        {
+            "shape": "Round",
+            "section": "large",
+            "carat": 3.2,
+            "color": "F",
+            "clarity": "VS1",
+        }
+    )
+    assert blocked_large["blocked"] is True
+    assert blocked_large["status"] == "score_required"
+    print("OK: round large score gate")
+
+    assert_score_gate_error_count(
+        [
+            {
+                "shape": "Round",
+                "section": "",
+                "carat": 1.2,
+                "color": "F",
+                "clarity": "VS1",
+                "karo_score": "",
+            }
+        ],
+        expected_count=1,
+        expected_section="main",
+    )
+    print("OK: empty section 1.2 ct inferred as main")
+
+    assert_score_gate_error_count(
+        [
+            {
+                "shape": "Round",
+                "section": "",
+                "carat": 3.2,
+                "color": "F",
+                "clarity": "VS1",
+                "karo_score": "",
+            }
+        ],
+        expected_count=1,
+        expected_section="large",
+    )
+    print("OK: empty section 3.2 ct inferred as large")
+
+    assert_score_gate_error_count(
+        [
+            {
+                "shape": "Oval",
+                "section": "main",
+                "carat": 1.2,
+                "color": "F",
+                "clarity": "VS1",
+                "karo_score": "",
+            }
+        ],
+        expected_count=0,
+    )
+    print("OK: oval main not blocked by score gate")
 
     non_round = calculate_price(
         {
