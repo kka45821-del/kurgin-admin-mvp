@@ -8,8 +8,9 @@ import urllib.request
 import pandas as pd
 import streamlit as st
 
-from admin_io import BATCH_COLS, STONE_COLS, load_batches, load_stones, public_preview
+from admin_io import BATCH_COLS, STONE_COLS, load_batches, load_stones
 from admin_log import write_admin_action
+from admin_publication_rules import public_preview
 
 DATA_REPO = 'kka45821-del/kurgin-data'
 BRANCH = 'main'
