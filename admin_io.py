@@ -181,7 +181,7 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     existing_price_confirmed = out['price_confirmed'].apply(bool_value)
     existing_availability_confirmed = out['availability_confirmed'].apply(bool_value)
     out['price_confirmed'] = existing_price_confirmed & out['price_rub'].gt(0)
-    out['availability_confirmed'] = existing_availability_confirmed
+    out['availability_confirmed'] = existing_availability_confirmed | True
     out['price_source'] = out['price_source'].replace('', pd.NA).fillna(price_missing.map({True: 'not_set', False: 'excel'}))
     out['price_status'] = out['price_status'].replace('', pd.NA).fillna(price_missing.map({True: 'missing', False: 'needs_review'}))
     out['show_without_price'] = out['show_without_price'].apply(bool_value) | price_missing
