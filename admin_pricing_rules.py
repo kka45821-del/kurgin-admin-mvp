@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 FORMULA_VERSION = 'pricing_formula_v1'
-FORMULA_DISPLAY = 'base_price_usd_per_carat × carat × usd_rub_rate × score_coefficient'
+FORMULA_DISPLAY = 'base_price_usd_per_carat × carat × manual_usd_rub_rate × score_coefficient'
 ROUNDING_RULE = 'ceil_to_1000_rub'
 
 ROUND_SHAPES = {'round', 'круг', 'round brilliant', 'round brilliant cut', 'rbc'}
@@ -84,6 +84,10 @@ def _row_value(row: dict, *keys: str, default: Any = None) -> Any:
     return default
 
 
+def _stone_score(stone: dict) -> Any:
+    return stone.get('karo_score') or stone.get('kurgin_score') or stone.get('score')
+
+
 def score_coefficient(score: Any) -> float | None:
     """Return KURGIN Score coefficient by controlled V1 bands.
 
@@ -122,6 +126,55 @@ def ceil_to_1000_rub(value: Any) -> int:
     return int(math.ceil(number / 1000.0) * 1000)
 
 
+def rate_warning(
+    manual_rate: Any,
+    reference_rate: Any | None = None,
+    threshold: Any = 0,
+) -> dict:
+    """Compare manual USD/RUB rate against a reference CBR rate.
+
+    Reference rate never changes the calculation automatically. It only returns
+    rate_warning=True when absolute difference is greater than threshold.
+    """
+    manual = _safe_float(manual_rate, None)
+    reference = _safe_float(reference_rate, None)
+    threshold_value = _safe_float(threshold, 0.0) or 0.0
+
+    if manual is None or manual <= 0:
+        return {
+            'status': PRICE_STATUS_BLOCKED,
+            'rate_warning': True,
+            'manual_usd_rub_rate': manual,
+            'reference_cbr_usd_rub_rate': reference,
+            'rate_warning_threshold_rub': threshold_value,
+            'rate_difference_rub': None,
+            'reason': 'manual_usd_rub_rate_required',
+        }
+
+    if reference is None or reference <= 0:
+        return {
+            'status': 'ok',
+            'rate_warning': False,
+            'manual_usd_rub_rate': manual,
+            'reference_cbr_usd_rub_rate': reference,
+            'rate_warning_threshold_rub': threshold_value,
+            'rate_difference_rub': None,
+            'reason': 'reference_rate_not_set',
+        }
+
+    difference = abs(manual - reference)
+    warning = difference > threshold_value
+    return {
+        'status': PRICE_STATUS_NEEDS_REVIEW if warning else 'ok',
+        'rate_warning': warning,
+        'manual_usd_rub_rate': manual,
+        'reference_cbr_usd_rub_rate': reference,
+        'rate_warning_threshold_rub': threshold_value,
+        'rate_difference_rub': difference,
+        'reason': 'manual_rate_differs_from_reference' if warning else '',
+    }
+
+
 def select_base_price(
     price_table: Iterable[dict],
     shape: Any,
@@ -130,14 +183,10 @@ def select_base_price(
     color: Any = '',
     clarity: Any = '',
 ) -> dict:
-    """Select base USD/ct row from a controlled table.
-
-    Expected row keys include: shape, section, carat_band_from, carat_band_to,
-    color, clarity, base_price_usd_per_carat, price_table_version.
-    """
+    """Select base USD/ct row from a controlled table."""
     carat_value = _safe_float(carat, None)
     if carat_value is None or carat_value <= 0:
-        return apply_empty_cell_rule(reason='invalid_or_missing_carat')
+        return {'status': PRICE_STATUS_MISSING, 'price_status': PRICE_STATUS_MISSING, 'reason': 'invalid_or_missing_carat'}
 
     shape_key = _normalize_key(shape)
     section_key = _normalized_section(section)
@@ -191,7 +240,9 @@ def apply_empty_cell_rule(reason: str = 'empty_base_price_cell', row: dict | Non
 def apply_score_required_rule(stone: dict) -> dict:
     return {
         'status': PRICE_STATUS_SCORE_REQUIRED,
+        'import_status': PRICE_STATUS_BLOCKED,
         'price_status': PRICE_STATUS_SCORE_REQUIRED,
+        'error': 'KURGIN Score required',
         'reason': 'round_main_large_requires_kurgin_score',
         'stone_id': stone.get('stone_id') or stone.get('id'),
         'public_visible': True,
@@ -207,18 +258,25 @@ def _score_required_for_stone(stone: dict) -> bool:
     return _is_round(stone.get('shape')) and _normalized_section(stone.get('section')) in SCORE_REQUIRED_SECTIONS
 
 
+def validate_round_main_large_score(stone: dict) -> dict:
+    if _score_required_for_stone(stone) and score_coefficient(_stone_score(stone)) is None:
+        result = apply_score_required_rule(stone)
+        result['ok'] = False
+        return result
+    return {'ok': True, 'status': 'ready', 'reason': ''}
+
+
 def can_calculate_price(stone: dict, base_price_result: dict | None = None) -> dict:
     """Validate whether a stone can receive a calculated admin price.
 
     This does not confirm the public price.
     """
-    if _safe_float(stone.get('carat'), 0.0) <= 0:
-        return {'ok': False, 'status': PRICE_STATUS_BLOCKED, 'reason': 'carat_required'}
+    score_validation = validate_round_main_large_score(stone)
+    if not score_validation.get('ok'):
+        return score_validation
 
-    if _score_required_for_stone(stone) and score_coefficient(stone.get('karo_score') or stone.get('kurgin_score') or stone.get('score')) is None:
-        result = apply_score_required_rule(stone)
-        result['ok'] = False
-        return result
+    if _safe_float(stone.get('carat'), 0.0) <= 0:
+        return {'ok': False, 'status': PRICE_STATUS_BLOCKED, 'price_status': PRICE_STATUS_BLOCKED, 'reason': 'carat_required'}
 
     if base_price_result and base_price_result.get('status') in {PRICE_STATUS_REQUEST_PRICE, PRICE_STATUS_MISSING}:
         result = dict(base_price_result)
@@ -231,7 +289,9 @@ def can_calculate_price(stone: dict, base_price_result: dict | None = None) -> d
 def calculate_price(
     stone: dict,
     price_table: Iterable[dict],
-    usd_rub_rate: Any,
+    manual_usd_rub_rate: Any,
+    reference_cbr_usd_rub_rate: Any | None = None,
+    rate_warning_threshold_rub: Any = 0,
     usd_rub_rate_version: str = '',
     score_band_version: str = 'score_bands_v1',
 ) -> dict:
@@ -239,7 +299,12 @@ def calculate_price(
 
     The result is calculated_price_rub / index_price_hint only. It must not be
     treated as confirmed_public_price_rub until a separate admin confirmation.
+    Reference CBR rate never changes the manual rate used in the calculation.
     """
+    rate_check = rate_warning(manual_usd_rub_rate, reference_cbr_usd_rub_rate, rate_warning_threshold_rub)
+    if rate_check.get('status') == PRICE_STATUS_BLOCKED:
+        return rate_check
+
     base = select_base_price(
         price_table=price_table,
         shape=stone.get('shape'),
@@ -252,14 +317,10 @@ def calculate_price(
     if not check.get('ok'):
         return check
 
-    rate = _safe_float(usd_rub_rate, None)
-    if rate is None or rate <= 0:
-        return {'status': PRICE_STATUS_BLOCKED, 'price_status': PRICE_STATUS_BLOCKED, 'reason': 'usd_rub_rate_required'}
-
     shape = stone.get('shape')
     section = _normalized_section(stone.get('section'))
     if _is_round(shape) and section in INDEX_V1_SECTIONS:
-        coefficient = score_coefficient(stone.get('karo_score') or stone.get('kurgin_score') or stone.get('score'))
+        coefficient = score_coefficient(_stone_score(stone))
     else:
         coefficient = 1.0
 
@@ -267,7 +328,8 @@ def calculate_price(
         return apply_score_required_rule(stone)
 
     carat = _safe_float(stone.get('carat'), 0.0) or 0.0
-    raw_price = float(base['base_price_usd_per_carat']) * carat * rate * coefficient
+    manual_rate = rate_check['manual_usd_rub_rate']
+    raw_price = float(base['base_price_usd_per_carat']) * carat * manual_rate * coefficient
     rounded_price = ceil_to_1000_rub(raw_price)
     timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -287,7 +349,11 @@ def calculate_price(
         'base_price_usd_per_carat': base['base_price_usd_per_carat'],
         'score_coefficient': coefficient,
         'carat': carat,
-        'usd_rub_rate': rate,
+        'manual_usd_rub_rate': manual_rate,
+        'reference_cbr_usd_rub_rate': rate_check.get('reference_cbr_usd_rub_rate'),
+        'rate_warning_threshold_rub': rate_check.get('rate_warning_threshold_rub'),
+        'rate_difference_rub': rate_check.get('rate_difference_rub'),
+        'rate_warning': bool(rate_check.get('rate_warning')),
         'price_table_version': base.get('price_table_version', ''),
         'usd_rub_rate_version': usd_rub_rate_version,
         'score_band_version': score_band_version,
