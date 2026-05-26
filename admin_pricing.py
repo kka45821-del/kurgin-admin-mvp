@@ -29,6 +29,21 @@ PREVIEW_COLUMNS = [
     "errors",
 ]
 
+PRICED_BATCH_CANDIDATE_COLUMNS = [
+    "stone_id",
+    "shape",
+    "carat",
+    "color",
+    "clarity",
+    "section",
+    "karo_score",
+    "current_status",
+    "availability_confirmed",
+    "price_rub",
+    "price_status",
+    "price_confirmed",
+]
+
 CONFIRMATION_EXTRA_COLUMNS = [
     "confirmed_public_price_rub",
     "calculated_price_rub",
@@ -37,6 +52,10 @@ CONFIRMATION_EXTRA_COLUMNS = [
     "global_price_adjustment_percent",
     "pricing_run_timestamp",
 ]
+
+PRICED_BATCH_SECTIONS = {"main", "large"}
+REQUEST_PRICE_STATUSES = {"", "missing", "request_price", "score_required", "future_scope", "needs_review", "index_pending", "index_suggested"}
+ROUND_SHAPES = {"round", "round brilliant", "round brilliant cut", "rbc", "круг"}
 
 
 def _read_price_table(uploaded_file: Any) -> pd.DataFrame:
@@ -59,6 +78,158 @@ def _format_tuple(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return "; ".join(str(item) for item in value if str(item))
     return str(value)
+
+
+def _text_series(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series([""] * len(df), index=df.index, dtype="object")
+    return df[column].fillna("").astype(str).str.strip()
+
+
+def _number_series(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series([0.0] * len(df), index=df.index, dtype="float")
+    return pd.to_numeric(df[column], errors="coerce").fillna(0)
+
+
+def _bool_series(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series([False] * len(df), index=df.index, dtype="bool")
+    values = df[column]
+    if values.dtype == bool:
+        return values.fillna(False).astype(bool)
+    return values.fillna("").astype(str).str.strip().str.lower().isin(["true", "1", "yes", "y", "да"])
+
+
+def _normalize_section_series(section: pd.Series) -> pd.Series:
+    aliases = {
+        "main": "main",
+        "основной": "main",
+        "основной каталог": "main",
+        "large": "large",
+        "крупные": "large",
+        "medium": "medium",
+        "средние": "medium",
+        "small": "small",
+        "мелкие": "small",
+        "colored": "colored",
+        "цветные": "colored",
+        "side": "side",
+        "боковые": "side",
+        "pairs": "pairs",
+        "парные": "pairs",
+        "exclusive": "exclusive",
+        "эксклюзив": "exclusive",
+    }
+    return section.fillna("").astype(str).str.strip().str.lower().map(lambda value: aliases.get(value, value))
+
+
+def _effective_section(stones: pd.DataFrame) -> pd.Series:
+    section = _normalize_section_series(_text_series(stones, "section"))
+    carat = _number_series(stones, "carat")
+    inferred = pd.Series([""] * len(stones), index=stones.index, dtype="object")
+    inferred = inferred.mask((carat >= 1) & (carat < 3), "main")
+    inferred = inferred.mask(carat >= 3, "large")
+    return section.mask(section.eq(""), inferred)
+
+
+def _is_colored_mask(stones: pd.DataFrame) -> pd.Series:
+    is_colored = _bool_series(stones, "is_colored")
+    color_type = _text_series(stones, "color_type").ne("")
+    color_hue = _text_series(stones, "color_hue").ne("")
+    color_intensity = _text_series(stones, "color_intensity").ne("")
+    return is_colored | color_type | color_hue | color_intensity
+
+
+def _is_round_mask(stones: pd.DataFrame) -> pd.Series:
+    return _text_series(stones, "shape").str.lower().isin(ROUND_SHAPES)
+
+
+def _priced_batch_candidate_preview(stones: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
+    if stones.empty:
+        return pd.DataFrame(columns=PRICED_BATCH_CANDIDATE_COLUMNS), {
+            "eligible_candidates": 0,
+            "round_candidates": 0,
+            "non_round_candidates": 0,
+            "missing_score": 0,
+            "already_priced": 0,
+            "request_price": 0,
+        }
+
+    carat = _number_series(stones, "carat")
+    score = _number_series(stones, "karo_score")
+    section = _effective_section(stones)
+    current_status = _text_series(stones, "current_status").str.lower()
+    price = _number_series(stones, "price_rub")
+    price_status = _text_series(stones, "price_status").str.lower()
+    price_confirmed = _bool_series(stones, "price_confirmed")
+    availability_confirmed = _bool_series(stones, "availability_confirmed")
+    physically_received = _bool_series(stones, "physically_received")
+    checked_by_kurgin = _bool_series(stones, "checked_by_kurgin")
+    show_in_catalog = _bool_series(stones, "show_in_catalog")
+    round_mask = _is_round_mask(stones)
+
+    base_scope = (
+        section.isin(PRICED_BATCH_SECTIONS)
+        & (~_is_colored_mask(stones))
+        & carat.ge(1)
+        & carat.le(5)
+        & current_status.eq("available")
+        & availability_confirmed
+        & physically_received
+        & checked_by_kurgin
+        & show_in_catalog
+    )
+    missing_score_mask = base_scope & round_mask & score.le(0)
+    eligible_mask = base_scope & ((~round_mask) | score.gt(0))
+    already_priced_mask = eligible_mask & (price.gt(0) | price_confirmed)
+    request_price_mask = eligible_mask & (~already_priced_mask) & (price.le(0) | price_status.isin(REQUEST_PRICE_STATUSES))
+
+    candidates = stones.loc[eligible_mask].copy()
+    if candidates.empty:
+        table = pd.DataFrame(columns=PRICED_BATCH_CANDIDATE_COLUMNS)
+    else:
+        table = pd.DataFrame(index=candidates.index)
+        for column in PRICED_BATCH_CANDIDATE_COLUMNS:
+            if column in candidates.columns:
+                table[column] = candidates[column]
+            else:
+                table[column] = ""
+        table["section"] = section.loc[candidates.index]
+        table["price_status"] = _text_series(candidates, "price_status")
+        table.loc[table["price_status"].eq("") & pd.to_numeric(table["price_rub"], errors="coerce").fillna(0).le(0), "price_status"] = "request_price"
+        table = table[PRICED_BATCH_CANDIDATE_COLUMNS].sort_values(["section", "carat", "shape"], ascending=[True, False, True])
+
+    summary = {
+        "eligible_candidates": int(eligible_mask.sum()),
+        "round_candidates": int((eligible_mask & round_mask).sum()),
+        "non_round_candidates": int((eligible_mask & ~round_mask).sum()),
+        "missing_score": int(missing_score_mask.sum()),
+        "already_priced": int(already_priced_mask.sum()),
+        "request_price": int(request_price_mask.sum()),
+    }
+    return table, summary
+
+
+def _render_priced_batch_candidates(stones: pd.DataFrame) -> None:
+    st.markdown("#### First priced batch candidates")
+    st.info("Это только подготовка первого priced batch. Данные не меняются, цены не подтверждаются, catalog.json не публикуется.")
+
+    candidates, summary = _priced_batch_candidate_preview(stones)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Eligible candidates", summary["eligible_candidates"])
+    m2.metric("Round candidates", summary["round_candidates"])
+    m3.metric("Non-Round candidates", summary["non_round_candidates"])
+
+    m4, m5, m6 = st.columns(3)
+    m4.metric("Missing score", summary["missing_score"])
+    m5.metric("Already priced", summary["already_priced"])
+    m6.metric("Request price", summary["request_price"])
+
+    if candidates.empty:
+        st.warning("Нет eligible candidates по строгим критериям. Проверь section, availability_confirmed, current_status и KURGIN Score для Round.")
+    else:
+        st.dataframe(candidates, use_container_width=True)
 
 
 def _count_status(summary: pd.Series, *statuses: str) -> int:
@@ -208,6 +379,8 @@ def render_pricing_tab() -> None:
     c1.metric("Камней в stones.csv", len(stones))
     c2.metric("С текущей ценой", int((price > 0).sum()))
     c3.metric("Цена подтверждена", int(confirmed.sum()))
+
+    _render_priced_batch_candidates(stones)
 
     st.warning("Preview не сохраняет рассчитанные цены. Для публикации нужен отдельный шаг подтверждения.")
     st.info("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json. Для сайта нужен отдельный Publication Gate.")
