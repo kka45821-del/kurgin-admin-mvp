@@ -10,35 +10,21 @@ BATCHES = DATA / 'upload_batches.csv'
 
 TAG_COLS = ['tag1', 'tag2', 'tag3', 'tag4', 'tag5', 'tag6']
 BASE_COLS = ['stone_id', 'title', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number', 'price_rub', 'karo_score']
-DETAIL_COLS = [
-    'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements',
-    'diameter', 'diameter_mm', 'size_mm', 'quantity',
-    'is_colored', 'color_type', 'color_hue', 'color_intensity',
-    'pair_id', 'side_type', 'growth_method', 'supplier_rate', 'supplier_total',
-]
+DETAIL_COLS = ['section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'supplier_rate', 'supplier_total']
+PRICE_COLS = ['price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'index_price_hint', 'admin_final_price_rub', 'admin_price_note', 'show_without_price']
 STATE_COLS = ['current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
-STONE_COLS = BASE_COLS + DETAIL_COLS + TAG_COLS + STATE_COLS
+STONE_COLS = BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = ['batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes']
 
-TEXT_COLS = [
-    'stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number',
-    'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements',
-    'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id',
-    'side_type', 'growth_method', *TAG_COLS, 'current_status', 'batch_number',
-    'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible',
-    'has_lab_document', 'physically_received', 'checked_by_kurgin',
-    'upload_confirmed', 'notes_internal'
-]
-
 ALIASES = {
-    'stone_id': ['stone_id', 'stone id', 'id', 'sku', 'stock', 'stock #', 'stock id', 'stock_id', 'lot', 'lot no', 'lot number', 'sr no', 'no'],
+    'stone_id': ['stone_id', 'stone id', 'id', 'sku', 'stock', 'stock #', 'stock id', 'lot', 'lot no', 'lot number', 'sr no', 'no'],
     'title': ['title', 'name', 'description', 'stone', 'item', 'product', 'название', 'описание'],
     'shape': ['shape', 'shape name', 'diamond shape', 'cut shape', 'form', 'description', 'форма', 'огранка'],
     'carat': ['carat', 'carats', 'ct', 'cts', 'weight', 'carat weight', 'weight ct', 'size', 'вес', 'карат'],
     'color': ['color', 'colour', 'color grade', 'colour grade', 'col', 'цвет', 'цветность'],
     'clarity': ['clarity', 'clarity grade', 'cla', 'cl', 'purity', 'чистота'],
     'lab': ['lab', 'laboratory', 'cert lab', 'certificate lab', 'grading lab', 'issuer', 'лаборатория'],
-    'report_number': ['report_number', 'report number', 'report no', 'report #', 'report', 'certificate', 'certificate_number', 'certificate number', 'certificate no', 'cert', 'cert no', 'номер сертификата'],
+    'report_number': ['report_number', 'report number', 'report no', 'report #', 'report', 'certificate', 'certificate number', 'certificate no', 'cert', 'cert no', 'номер сертификата'],
     'price_rub': ['price_rub', 'price rub', 'price_rur', 'price rur', 'public price rub', 'price', 'rub', 'rur', 'цена', 'стоимость'],
     'karo_score': ['karo_score', 'karo score', 'kurgin_score', 'kurgin score', 'score', 'karo', 'оценка'],
     'section': ['section', 'catalog section', 'category', 'раздел'],
@@ -60,13 +46,19 @@ ALIASES = {
     'growth_method': ['type', 'growth_method', 'growth method', 'method', 'cvd hpht'],
     'supplier_rate': ['rate', 'supplier rate'],
     'supplier_total': ['total amt', 'total amount', 'supplier total'],
-    'tag1': ['tag1', 'teg1', 'тег1'],
-    'tag2': ['tag2', 'teg2', 'тег2'],
-    'tag3': ['tag3', 'teg3', 'тег3'],
-    'tag4': ['tag4', 'teg4', 'тег4'],
-    'tag5': ['tag5', 'teg5', 'тег5'],
-    'tag6': ['tag6', 'teg6', 'тег6'],
+    'price_confirmed': ['price_confirmed', 'price confirmed', 'confirmed price', 'цена подтверждена'],
+    'availability_confirmed': ['availability_confirmed', 'availability confirmed', 'confirmed availability', 'наличие подтверждено'],
+    'price_source': ['price_source', 'price source', 'источник цены'],
+    'price_status': ['price_status', 'price status', 'статус цены'],
+    'index_price_hint': ['index_price_hint', 'index price hint', 'index hint', 'ориентир цены'],
+    'admin_final_price_rub': ['admin_final_price_rub', 'admin final price rub', 'final price rub', 'финальная цена'],
+    'admin_price_note': ['admin_price_note', 'admin price note', 'price note', 'комментарий по цене'],
+    'show_without_price': ['show_without_price', 'show without price', 'показывать без цены'],
+    **{col: [col, col.replace('tag', 'teg'), col.replace('tag', 'тег')] for col in TAG_COLS},
 }
+
+TEXT_COLS = ['stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price', *TAG_COLS, 'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
+NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub']
 
 
 def key_name(value) -> str:
@@ -126,9 +118,8 @@ def next_batch_number() -> str:
 def pick_column(raw: pd.DataFrame, key: str) -> pd.Series:
     columns = {key_name(col): col for col in raw.columns}
     for alias in ALIASES.get(key, [key]):
-        normalized_alias = key_name(alias)
-        if normalized_alias in columns:
-            return raw[columns[normalized_alias]].reset_index(drop=True)
+        if key_name(alias) in columns:
+            return raw[columns[key_name(alias)]].reset_index(drop=True)
     return pd.Series([''] * len(raw), dtype='object')
 
 
@@ -138,21 +129,20 @@ def clean_number(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors='coerce').fillna(0)
 
 
+def bool_value(value) -> bool:
+    return str(value).strip().lower() in ['true', '1', 'yes', 'y', 'да']
+
+
 def derive_diameter_from_measurements(value) -> float:
-    text = str(value or '').strip()
-    if not text or text.lower() in ['nan', 'none']:
-        return 0.0
-    numbers = re.findall(r'\d+(?:[\.,]\d+)?', text)
+    numbers = re.findall(r'\d+(?:[\.,]\d+)?', str(value or ''))
     if len(numbers) < 2:
         return 0.0
     try:
         first = float(numbers[0].replace(',', '.'))
         second = float(numbers[1].replace(',', '.'))
+        return round((first + second) / 2, 3) if first > 0 and second > 0 else 0.0
     except ValueError:
         return 0.0
-    if first <= 0 or second <= 0:
-        return 0.0
-    return round((first + second) / 2, 3)
 
 
 def normalize_shape_value(value: str) -> str:
@@ -165,12 +155,11 @@ def normalize_shape_value(value: str) -> str:
 
 def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_name: str, notes: str) -> pd.DataFrame:
     out = pd.DataFrame({col: [''] * len(raw) for col in STONE_COLS})
-    for col in BASE_COLS + DETAIL_COLS + TAG_COLS:
+    for col in BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS:
         out[col] = pick_column(raw, col)
 
     for col in TEXT_COLS:
-        if col in out.columns:
-            out[col] = out[col].astype('object')
+        out[col] = out[col].astype('object')
 
     out['current_status'] = 'available'
     out['batch_number'] = str(batch_number)
@@ -184,33 +173,35 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out['upload_confirmed'] = True
     out['notes_internal'] = notes or 'uploaded_xlsx'
 
-    for col in ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total']:
+    for col in NUMBER_COLS:
         out[col] = clean_number(out[col])
     out['shape'] = out['shape'].apply(normalize_shape_value)
 
-    text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number']
+    price_missing = out['price_rub'].le(0)
+    existing_price_confirmed = out['price_confirmed'].apply(bool_value)
+    existing_availability_confirmed = out['availability_confirmed'].apply(bool_value)
+    out['price_confirmed'] = existing_price_confirmed & out['price_rub'].gt(0)
+    out['availability_confirmed'] = existing_availability_confirmed
+    out['price_source'] = out['price_source'].replace('', pd.NA).fillna(price_missing.map({True: 'not_set', False: 'excel'}))
+    out['price_status'] = out['price_status'].replace('', pd.NA).fillna(price_missing.map({True: 'missing', False: 'needs_review'}))
+    out['show_without_price'] = out['show_without_price'].apply(bool_value) | price_missing
+
+    text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number', 'price_source', 'price_status', 'admin_price_note']
     for col in text_cleanup_cols:
         out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': '', 'none': ''})
 
     derived_diameter = out['measurements'].apply(derive_diameter_from_measurements)
-    missing_diameter = out['diameter'].le(0) & derived_diameter.gt(0)
-    missing_diameter_mm = out['diameter_mm'].le(0) & derived_diameter.gt(0)
-    out.loc[missing_diameter, 'diameter'] = derived_diameter[missing_diameter]
-    out.loc[missing_diameter_mm, 'diameter_mm'] = derived_diameter[missing_diameter_mm]
+    for col in ['diameter', 'diameter_mm']:
+        missing = out[col].le(0) & derived_diameter.gt(0)
+        out.loc[missing, col] = derived_diameter[missing]
 
     empty_id = out['stone_id'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
     if empty_id.any():
-        generated_ids = [f'{batch_number}-{i + 1:04d}' for i in range(int(empty_id.sum()))]
-        out.loc[empty_id, 'stone_id'] = generated_ids
+        out.loc[empty_id, 'stone_id'] = [f'{batch_number}-{i + 1:04d}' for i in range(int(empty_id.sum()))]
 
     empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
     if empty_title.any():
-        out.loc[empty_title, 'title'] = (
-            out.loc[empty_title, 'shape'].astype(str) + ' ' +
-            out.loc[empty_title, 'carat'].astype(str) + ' ' +
-            out.loc[empty_title, 'color'].astype(str) + ' ' +
-            out.loc[empty_title, 'clarity'].astype(str)
-        )
+        out.loc[empty_title, 'title'] = out.loc[empty_title, 'shape'].astype(str) + ' ' + out.loc[empty_title, 'carat'].astype(str) + ' ' + out.loc[empty_title, 'color'].astype(str) + ' ' + out.loc[empty_title, 'clarity'].astype(str)
     return out[STONE_COLS]
 
 
