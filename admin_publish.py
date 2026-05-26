@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from admin_io import BATCH_COLS, STONE_COLS, load_batches, load_stones, public_preview
+from admin_log import write_admin_action
 
 DATA_REPO = 'kka45821-del/kurgin-data'
 BRANCH = 'main'
@@ -275,11 +276,36 @@ def render_publish_tab() -> None:
             _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)
             _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)
             _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)
+            write_admin_action(
+                action='publish_catalog_json',
+                entity='kurgin-data/catalog.json',
+                rows_count=len(public),
+                source='admin_publish',
+                result='success',
+                details='Опубликованы catalog.json, data/catalog.json, stones.csv, upload_batches.csv',
+            )
             st.success('catalog.json опубликован в kurgin-data')
         except urllib.error.HTTPError as exc:
+            details = f'HTTP Error {exc.code}: {exc.reason}'
+            write_admin_action(
+                action='publish_catalog_json',
+                entity='kurgin-data/catalog.json',
+                rows_count=len(public),
+                source='admin_publish',
+                result='error',
+                details=details,
+            )
             if exc.code == 409:
                 st.error('Ошибка публикации: GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код уже повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
             else:
-                st.error(f'Ошибка публикации: HTTP Error {exc.code}: {exc.reason}')
+                st.error(f'Ошибка публикации: {details}')
         except Exception as exc:
+            write_admin_action(
+                action='publish_catalog_json',
+                entity='kurgin-data/catalog.json',
+                rows_count=len(public),
+                source='admin_publish',
+                result='error',
+                details=str(exc),
+            )
             st.error(f'Ошибка публикации: {exc}')
