@@ -15,6 +15,7 @@ from admin_io import (
     upsert_batch_log,
 )
 from admin_log import write_admin_action
+from admin_pricing_rules import validate_round_main_large_score
 from admin_validation import validate_catalog
 
 
@@ -161,6 +162,63 @@ def sheet_diagnostics(xls: pd.ExcelFile) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _is_blank(value) -> bool:
+    if value is None:
+        return True
+    text = str(value).strip()
+    return text == "" or text.lower() in {"nan", "none", "null"}
+
+
+def _infer_section_for_score_gate(row: pd.Series) -> str:
+    section = "" if _is_blank(row.get("section")) else str(row.get("section")).strip().lower()
+    if section:
+        return section
+
+    carat = pd.to_numeric(pd.Series([row.get("carat")]), errors="coerce").fillna(0).iloc[0]
+    if 1.0 <= float(carat) < 3.0:
+        return "main"
+    if float(carat) >= 3.0:
+        return "large"
+    return ""
+
+
+def score_gate_errors(normalized: pd.DataFrame) -> pd.DataFrame:
+    """Return upload-blocking errors for Round main/large stones without KURGIN Score.
+
+    This gate is stricter than pricing calculation: if any row fails, the whole
+    Excel batch must not be saved. When Excel has no section column, section is
+    inferred from carat for this gate only: 1.00–2.99 ct = main, 3.00+ ct = large.
+    """
+    rows = []
+    if normalized.empty:
+        return pd.DataFrame(rows)
+
+    for idx, row in normalized.iterrows():
+        stone = row.to_dict()
+        inferred_section = _infer_section_for_score_gate(row)
+        if inferred_section:
+            stone["section"] = inferred_section
+
+        validation = validate_round_main_large_score(stone)
+        if not validation.get("blocked"):
+            continue
+
+        rows.append(
+            {
+                "type": "critical",
+                "field": "karo_score",
+                "rows": str(idx + 2),
+                "count": 1,
+                "message": "KURGIN Score обязателен для Round main/large. Загрузка всей партии заблокирована.",
+                "stone_id": stone.get("stone_id") or stone.get("id") or "",
+                "shape": stone.get("shape", ""),
+                "carat": stone.get("carat", ""),
+                "section": inferred_section or stone.get("section", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def render_upload_tab() -> None:
     st.subheader("Загрузка новой партии")
     st.caption("Единый импорт: KURGIN-шаблон, supplier packing list и результаты KURGIN Score.")
@@ -233,6 +291,10 @@ def render_upload_tab() -> None:
     st.dataframe(normalized.head(20), use_container_width=True)
 
     critical_errors, warnings = validate_catalog(normalized)
+    score_errors = score_gate_errors(normalized)
+    if not score_errors.empty:
+        critical_errors = pd.concat([critical_errors, score_errors], ignore_index=True)
+
     st.subheader("Проверка загрузки")
 
     if critical_errors.empty:
@@ -242,7 +304,7 @@ def render_upload_tab() -> None:
         st.dataframe(critical_errors, use_container_width=True)
 
     if not warnings.empty:
-        st.warning("Есть предупреждения. Их можно оставить для текущего этапа, особенно по цене и KURGIN Score.")
+        st.warning("Есть предупреждения. Их можно оставить для текущего этапа, особенно по цене. KURGIN Score обязателен для Round main/large.")
         st.dataframe(warnings, use_container_width=True)
 
     confirmed = st.checkbox("Подтверждаю загрузку партии и понимаю, что автоматические MVP-флаги нужно проверить перед публикацией")
