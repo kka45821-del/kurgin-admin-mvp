@@ -5,13 +5,24 @@ import streamlit as st
 
 from admin_batches import render_batches_tab
 from admin_io import load_batches, load_stones, public_preview, save_stones
+from admin_log import load_admin_actions, write_admin_action
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
 from admin_publish import render_publish_tab
 from admin_upload import render_upload_tab
 from admin_validation import validate_catalog
 
 st.set_page_config(page_title="KURGIN Admin MVP", page_icon="◇", layout="wide")
-ADMIN_PASSWORD = os.getenv("KURGIN_ADMIN_PASSWORD", "admin123")
+
+
+def admin_password() -> str:
+    try:
+        secret_password = st.secrets.get("KURGIN_ADMIN_PASSWORD", "")
+    except Exception:
+        secret_password = ""
+    return secret_password or os.getenv("KURGIN_ADMIN_PASSWORD", "")
+
+
+ADMIN_PASSWORD = admin_password()
 
 BADGE_STYLE = {
     ACTIVE: "#0f7b0f",
@@ -69,6 +80,7 @@ def render_dashboard(item: dict | None):
     stones = load_stones()
     public = public_preview(stones)
     batches = load_batches()
+    actions = load_admin_actions()
     critical, warnings = validate_catalog(stones) if not stones.empty else (pd.DataFrame(), pd.DataFrame())
 
     st.markdown("### Общий статус")
@@ -76,7 +88,7 @@ def render_dashboard(item: dict | None):
     c1.metric("Всего камней", len(stones))
     c2.metric("Публичных", len(public))
     c3.metric("Партий", len(batches))
-    c4.metric("Предупреждений", len(warnings))
+    c4.metric("Действий в журнале", len(actions))
 
     st.markdown("### Ошибки и риски")
     if critical.empty:
@@ -105,6 +117,13 @@ def render_catalog_page(item: dict | None):
         edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
         if st.button("Сохранить каталог", type="primary"):
             save_stones(edited)
+            write_admin_action(
+                action="catalog_save",
+                entity="stones.csv",
+                rows_count=len(edited),
+                source="app.catalog_all",
+                details="Ручное сохранение таблицы каталога",
+            )
             st.success("Каталог сохранён")
         return
 
@@ -168,6 +187,7 @@ def render_catalog_page(item: dict | None):
 def render_active_page(section: dict, item: dict | None):
     render_header(section, item)
     section_id = section.get("id")
+    item_id = item.get("id") if item else ""
     if section_id == "dashboard":
         render_dashboard(item)
     elif section_id == "catalog":
@@ -176,6 +196,9 @@ def render_active_page(section: dict, item: dict | None):
         st.write("Здесь будет управление текстами публичных страниц. Сейчас фиксируется структура, без риска сломать рабочий каталог.")
     elif section_id == "navigation":
         st.write("Текущая нижняя панель публичного сайта: KURGIN, Инструменты, Каталог, Избранное, Корзина, Профиль.")
+    elif section_id == "settings" and item_id == "settings_logs":
+        st.markdown("### Журнал действий администратора")
+        st.dataframe(load_admin_actions().sort_values("created_at", ascending=False), use_container_width=True)
     elif section_id == "settings":
         st.write("Текущий MVP-режим: данные каталога публикуются через kurgin-data, публичный сайт читает catalog.json.")
     elif section_id == "requests":
@@ -204,10 +227,16 @@ if "login" not in st.session_state:
 st.title("KURGIN Admin MVP")
 st.caption("Одна рабочая админка: каталог, импорт Excel, партии, preview и публикация. Будущие зоны показаны как каркас, но не включены как рабочие функции.")
 
+if not ADMIN_PASSWORD:
+    st.error("KURGIN_ADMIN_PASSWORD не задан. Для запуска админки добавь пароль в Streamlit secrets или переменную окружения.")
+    st.stop()
+
 if not st.session_state.login:
     password = st.text_input("Пароль", type="password")
     if st.button("Войти", type="primary"):
         st.session_state.login = password == ADMIN_PASSWORD
+        if st.session_state.login:
+            write_admin_action(action="admin_login", entity="session", source="app.login", details="Успешный вход в админку")
         st.rerun()
     st.stop()
 
@@ -227,6 +256,7 @@ with st.sidebar:
 
     st.divider()
     if st.button("Выйти"):
+        write_admin_action(action="admin_logout", entity="session", source="app.sidebar", details="Выход из админки")
         st.session_state.login = False
         st.rerun()
     st.caption("Ограниченные и будущие функции не считаются рабочими.")
