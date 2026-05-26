@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
-from admin_io import load_stones
+from admin_io import load_stones, save_stones
 from admin_log import write_admin_action
 from admin_pricing_rules import calculate_price
 
@@ -19,12 +20,22 @@ PREVIEW_COLUMNS = [
     "clarity",
     "section",
     "price_status",
+    "raw_calculated_price_rub",
     "calculated_price_rub",
     "score_coefficient",
     "public_action",
     "rate_warning",
     "warnings",
     "errors",
+]
+
+CONFIRMATION_EXTRA_COLUMNS = [
+    "confirmed_public_price_rub",
+    "calculated_price_rub",
+    "raw_calculated_price_rub",
+    "manual_usd_rub_rate",
+    "global_price_adjustment_percent",
+    "pricing_run_timestamp",
 ]
 
 
@@ -101,6 +112,7 @@ def _build_pricing_preview(
                 "clarity": stone_dict.get("clarity", ""),
                 "section": stone_dict.get("section", ""),
                 "price_status": result.get("price_status") or result.get("status", ""),
+                "raw_calculated_price_rub": result.get("raw_calculated_price_rub"),
                 "calculated_price_rub": result.get("calculated_price_rub"),
                 "score_coefficient": result.get("score_coefficient"),
                 "public_action": result.get("public_action", ""),
@@ -112,10 +124,75 @@ def _build_pricing_preview(
     return pd.DataFrame(rows, columns=PREVIEW_COLUMNS)
 
 
+def _confirmable_preview(preview: pd.DataFrame) -> pd.DataFrame:
+    if preview.empty:
+        return preview.copy()
+    calculated_price = pd.to_numeric(preview["calculated_price_rub"], errors="coerce").fillna(0)
+    errors = preview["errors"].fillna("").astype(str).str.strip()
+    mask = preview["price_status"].eq("calculated") & calculated_price.gt(0) & errors.eq("")
+    return preview.loc[mask].copy()
+
+
+def _ensure_confirmation_columns(stones: pd.DataFrame) -> pd.DataFrame:
+    updated = stones.copy()
+    for col in CONFIRMATION_EXTRA_COLUMNS:
+        if col not in updated.columns:
+            updated[col] = ""
+    for col in ["price_rub", "price_confirmed", "price_status", "price_source", "index_price_hint"]:
+        if col not in updated.columns:
+            updated[col] = ""
+    return updated
+
+
+def _apply_mass_price_confirmation(
+    selected: pd.DataFrame,
+    manual_usd_rub_rate: float,
+    global_price_adjustment_percent: float,
+) -> int:
+    stones = _ensure_confirmation_columns(load_stones())
+    if stones.empty or selected.empty or "stone_id" not in stones.columns:
+        return 0
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    confirmed_count = 0
+    selected_by_id = selected.set_index("stone_id", drop=False)
+
+    for index, stone in stones.iterrows():
+        stone_id = str(stone.get("stone_id", ""))
+        if not stone_id or stone_id not in selected_by_id.index:
+            continue
+
+        row = selected_by_id.loc[stone_id]
+        if isinstance(row, pd.DataFrame):
+            row = row.iloc[0]
+
+        calculated_price = pd.to_numeric(pd.Series([row.get("calculated_price_rub")]), errors="coerce").fillna(0).iloc[0]
+        if calculated_price <= 0:
+            continue
+
+        raw_price = row.get("raw_calculated_price_rub", "")
+        stones.at[index, "confirmed_public_price_rub"] = int(calculated_price)
+        stones.at[index, "price_rub"] = int(calculated_price)
+        stones.at[index, "price_confirmed"] = True
+        stones.at[index, "price_status"] = "confirmed"
+        stones.at[index, "price_source"] = "pricing_engine"
+        stones.at[index, "index_price_hint"] = int(calculated_price)
+        stones.at[index, "calculated_price_rub"] = int(calculated_price)
+        stones.at[index, "raw_calculated_price_rub"] = "" if pd.isna(raw_price) else raw_price
+        stones.at[index, "manual_usd_rub_rate"] = manual_usd_rub_rate
+        stones.at[index, "global_price_adjustment_percent"] = global_price_adjustment_percent
+        stones.at[index, "pricing_run_timestamp"] = timestamp
+        confirmed_count += 1
+
+    if confirmed_count > 0:
+        save_stones(stones)
+    return confirmed_count
+
+
 def render_pricing_tab() -> None:
     st.markdown("### Pricing Engine Preview")
     st.caption(
-        "Безопасный preview: расчёт не сохраняет цены, не подтверждает price_confirmed, "
+        "Безопасный preview: расчёт сам по себе не сохраняет цены, не подтверждает price_confirmed, "
         "не публикует catalog.json и не включает checkout."
     )
 
@@ -133,7 +210,7 @@ def render_pricing_tab() -> None:
     c3.metric("Цена подтверждена", int(confirmed.sum()))
 
     st.warning("Preview не сохраняет рассчитанные цены. Для публикации нужен отдельный шаг подтверждения.")
-    st.info("Preview не меняет stones.csv. Для sellable позже потребуется отдельное ручное подтверждение цены и publication gate.")
+    st.info("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json. Для сайта нужен отдельный Publication Gate.")
 
     uploaded_file = st.file_uploader("Price table Excel/CSV", type=["xlsx", "xls", "csv"])
     col_rate, col_ref = st.columns(2)
@@ -166,7 +243,7 @@ def render_pricing_tab() -> None:
         return
 
     if st.button("Рассчитать preview", type="primary"):
-        preview = _build_pricing_preview(
+        st.session_state["pricing_preview"] = _build_pricing_preview(
             stones=stones,
             price_table=price_table,
             manual_usd_rub_rate=manual_rate,
@@ -174,42 +251,96 @@ def render_pricing_tab() -> None:
             rate_warning_threshold_rub=threshold,
             global_price_adjustment_percent=adjustment,
         )
-        summary = _preview_summary(preview)
+        st.session_state["pricing_preview_params"] = {
+            "manual_rate": manual_rate,
+            "reference_rate": reference_rate,
+            "threshold": threshold,
+            "adjustment": adjustment,
+        }
 
-        st.markdown("#### Pricing summary")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Всего строк", summary["total"])
-        m2.metric("Calculated", summary["calculated"])
-        m3.metric("Request price", summary["request_price"])
-        m4.metric("Score required", summary["score_required"])
+    preview = st.session_state.get("pricing_preview")
+    params = st.session_state.get("pricing_preview_params", {})
+    if preview is None:
+        return
 
-        m5, m6, m7, m8 = st.columns(4)
-        m5.metric("Future scope", summary["future_scope"])
-        m6.metric("Blocked / missing", summary["blocked_missing"])
-        m7.metric("Rows with warnings", summary["rows_with_warnings"])
-        m8.metric("Rows with errors", summary["rows_with_errors"])
+    summary = _preview_summary(preview)
 
-        st.metric("Rate warning", summary["rate_warning"])
+    st.markdown("#### Pricing summary")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Всего строк", summary["total"])
+    m2.metric("Calculated", summary["calculated"])
+    m3.metric("Request price", summary["request_price"])
+    m4.metric("Score required", summary["score_required"])
 
-        st.markdown("#### Calculated price preview")
-        st.dataframe(preview, use_container_width=True)
+    m5, m6, m7, m8 = st.columns(4)
+    m5.metric("Future scope", summary["future_scope"])
+    m6.metric("Blocked / missing", summary["blocked_missing"])
+    m7.metric("Rows with warnings", summary["rows_with_warnings"])
+    m8.metric("Rows with errors", summary["rows_with_errors"])
 
-        status_counts = preview["price_status"].fillna("missing").value_counts().rename_axis("price_status").reset_index(name="count")
-        st.markdown("#### Price status summary")
-        st.dataframe(status_counts, use_container_width=True)
+    st.metric("Rate warning", summary["rate_warning"])
 
-        details = (
-            f"manual_usd_rub_rate={manual_rate}; "
-            f"reference_cbr_usd_rub_rate={reference_rate}; "
-            f"rate_warning_threshold_rub={threshold}; "
-            f"global_price_adjustment_percent={adjustment}; "
-            f"summary={summary}"
+    st.markdown("#### Calculated price preview")
+    st.dataframe(preview, use_container_width=True)
+
+    status_counts = preview["price_status"].fillna("missing").value_counts().rename_axis("price_status").reset_index(name="count")
+    st.markdown("#### Price status summary")
+    st.dataframe(status_counts, use_container_width=True)
+
+    details = (
+        f"manual_usd_rub_rate={params.get('manual_rate')}; "
+        f"reference_cbr_usd_rub_rate={params.get('reference_rate')}; "
+        f"rate_warning_threshold_rub={params.get('threshold')}; "
+        f"global_price_adjustment_percent={params.get('adjustment')}; "
+        f"summary={summary}"
+    )
+    write_admin_action(
+        action="pricing_preview_run",
+        entity="pricing_engine",
+        rows_count=len(preview),
+        source="admin_pricing",
+        details=details,
+    )
+    st.caption("Audit log: pricing_preview_run записан. Preview сам по себе цены не сохраняет.")
+
+    st.markdown("#### Mass Price Confirmation")
+    st.warning("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json и НЕ включает checkout.")
+
+    confirmable = _confirmable_preview(preview)
+    if confirmable.empty:
+        st.info("Нет строк, доступных для подтверждения. Требуется price_status=calculated, calculated_price_rub > 0 и пустые errors.")
+        return
+
+    selection = confirmable.copy()
+    selection.insert(0, "confirm", False)
+    edited_selection = st.data_editor(
+        selection,
+        use_container_width=True,
+        hide_index=True,
+        disabled=[col for col in selection.columns if col != "confirm"],
+    )
+    selected = edited_selection[edited_selection["confirm"] == True].copy()
+    st.caption(f"Выбрано к подтверждению: {len(selected)}")
+
+    if st.button("Подтвердить выбранные цены", type="primary", disabled=selected.empty):
+        confirmed_count = _apply_mass_price_confirmation(
+            selected=selected,
+            manual_usd_rub_rate=float(params.get("manual_rate") or manual_rate),
+            global_price_adjustment_percent=float(params.get("adjustment") or adjustment),
         )
         write_admin_action(
-            action="pricing_preview_run",
+            action="mass_price_confirmation",
             entity="pricing_engine",
-            rows_count=len(preview),
+            rows_count=confirmed_count,
             source="admin_pricing",
-            details=details,
+            details=(
+                f"manual_usd_rub_rate={params.get('manual_rate')}; "
+                f"global_price_adjustment_percent={params.get('adjustment')}; "
+                f"confirmed_count={confirmed_count}; "
+                f"summary={summary}"
+            ),
         )
-        st.caption("Audit log: pricing_preview_run записан. Цены при этом не сохранены.")
+        if confirmed_count > 0:
+            st.success(f"Подтверждено цен: {confirmed_count}. catalog.json не опубликован; checkout не включён.")
+        else:
+            st.error("Не удалось подтвердить выбранные цены. Проверь stone_id и preview.")
