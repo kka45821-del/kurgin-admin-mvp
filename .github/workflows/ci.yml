@@ -39,5 +39,7 @@ jobs:
           python scripts/smoke_pricing_rules.py
 
       - name: Run pytest
+        env:
+          PYTHONPATH: .
         run: |
           pytest tests/test_admin_pricing_rules.py
