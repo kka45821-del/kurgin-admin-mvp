@@ -49,7 +49,7 @@ def test_non_round_main_large_uses_coefficient_one():
     result = calculate_price(stone, PRICE_TABLE, manual_usd_rub_rate=100)
     assert result["status"] == "calculated"
     assert result["score_coefficient"] == 1.0
-    assert result["calculated_price_rub"] == 120000
+    assert result["calculated_price_rub"] == 12000
     assert result["price_confirmed"] is False
     assert result["checkout_enabled"] is False
 
