@@ -25,6 +25,13 @@ PUBLIC_ALIAS_FIELDS = {
     'availability': 'current_status',
 }
 
+PUBLIC_COMPUTED_FIELDS = [
+    'public_visible',
+    'public_sellable',
+    'checkout_enabled',
+    'public_action',
+]
+
 IMPORTANT_CATALOG_FIELDS = [
     'stone_id', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number',
     'karo_score', 'price_rub', 'section', 'cut', 'polish', 'symmetry',
@@ -180,6 +187,9 @@ def _section_for_row(row: pd.Series) -> str:
 def _stone_from_row(row: pd.Series) -> dict:
     stone = {}
     for col in STONE_COLS:
+        stone[col] = _clean_value(row.get(col))
+
+    for col in PUBLIC_COMPUTED_FIELDS:
         stone[col] = _clean_value(row.get(col))
 
     section = _section_for_row(row)
