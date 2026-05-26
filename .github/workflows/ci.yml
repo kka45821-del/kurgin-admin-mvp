@@ -38,6 +38,10 @@ jobs:
         run: |
           python scripts/smoke_pricing_rules.py
 
+      - name: Run catalog export dry-run
+        run: |
+          python scripts/dry_run_catalog_export.py
+
       - name: Run pytest
         env:
           PYTHONPATH: .
