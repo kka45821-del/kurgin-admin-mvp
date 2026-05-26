@@ -14,6 +14,7 @@ from admin_io import (
     save_stones,
     upsert_batch_log,
 )
+from admin_log import write_admin_action
 from admin_validation import validate_catalog
 
 
@@ -163,6 +164,10 @@ def sheet_diagnostics(xls: pd.ExcelFile) -> pd.DataFrame:
 def render_upload_tab() -> None:
     st.subheader("Загрузка новой партии")
     st.caption("Единый импорт: KURGIN-шаблон, supplier packing list и результаты KURGIN Score.")
+    st.warning(
+        "MVP-предупреждение: импорт сейчас автоматически помечает камни как available/show_in_catalog/is_mvp_eligible. "
+        "Перед публикацией обязательно проверь Publication Gate и публичный preview."
+    )
 
     st.download_button(
         "Скачать Excel-шаблон каталога",
@@ -219,10 +224,12 @@ def render_upload_tab() -> None:
     st.dataframe(detected_mapping(raw), use_container_width=True)
 
     st.write("Preview Excel")
+    st.caption(f"Всего строк на выбранном листе: {len(raw)}. Ниже показаны первые 20 строк для проверки.")
     st.dataframe(raw.head(20), use_container_width=True)
 
     normalized = normalize_excel(raw, batch_number.strip(), upload_date, supplier_name.strip(), notes)
     st.write("После нормализации")
+    st.caption(f"Нормализовано камней: {len(normalized)}. Ниже показаны первые 20 строк; сохранение партии использует все строки.")
     st.dataframe(normalized.head(20), use_container_width=True)
 
     critical_errors, warnings = validate_catalog(normalized)
@@ -238,7 +245,7 @@ def render_upload_tab() -> None:
         st.warning("Есть предупреждения. Их можно оставить для текущего этапа, особенно по цене и KURGIN Score.")
         st.dataframe(warnings, use_container_width=True)
 
-    confirmed = st.checkbox("Подтверждаю загрузку партии")
+    confirmed = st.checkbox("Подтверждаю загрузку партии и понимаю, что автоматические MVP-флаги нужно проверить перед публикацией")
     can_save = confirmed and critical_errors.empty and bool(batch_number.strip()) and bool(supplier_name.strip())
 
     if st.button("Сохранить партию", type="primary", disabled=not can_save):
@@ -246,4 +253,11 @@ def render_upload_tab() -> None:
         result = pd.concat([current, normalized], ignore_index=True) if mode.startswith("Добавить") else normalized
         save_stones(result)
         upsert_batch_log(batch_number.strip(), upload_date, supplier_name.strip(), len(normalized), notes)
+        write_admin_action(
+            action="import_excel_batch",
+            entity=str(batch_number).strip(),
+            rows_count=len(normalized),
+            source="admin_upload",
+            details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}",
+        )
         st.success(f"Партия {batch_number} сохранена. Камней: {len(normalized)}")
