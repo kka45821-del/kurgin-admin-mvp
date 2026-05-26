@@ -29,6 +29,16 @@ PREVIEW_COLUMNS = [
     "errors",
 ]
 
+PRICE_TABLE_TEMPLATE_COLUMNS = [
+    "section",
+    "carat_band_from",
+    "carat_band_to",
+    "color",
+    "clarity",
+    "base_price_usd_per_carat",
+    "is_active",
+]
+
 PRICED_BATCH_CANDIDATE_COLUMNS = [
     "stone_id",
     "shape",
@@ -232,6 +242,62 @@ def _render_priced_batch_candidates(stones: pd.DataFrame) -> None:
         st.dataframe(candidates, use_container_width=True)
 
 
+def _price_table_template_frame() -> pd.DataFrame:
+    bands_by_section = {
+        "main": [(1.0, 1.5), (1.5, 2.0), (2.0, 2.5), (2.5, 3.0)],
+        "large": [(3.0, 4.0), (4.0, 5.0)],
+    }
+    colors = ["D", "E", "F", "G"]
+    clarities = ["VVS1", "VVS2", "VS1", "VS2"]
+    rows: list[dict[str, Any]] = [
+        {
+            "section": "main",
+            "carat_band_from": 1.0,
+            "carat_band_to": 1.5,
+            "color": "D",
+            "clarity": "VVS1",
+            "base_price_usd_per_carat": 100,
+            "is_active": False,
+        }
+    ]
+
+    for section, bands in bands_by_section.items():
+        for band_from, band_to in bands:
+            for color in colors:
+                for clarity in clarities:
+                    rows.append(
+                        {
+                            "section": section,
+                            "carat_band_from": band_from,
+                            "carat_band_to": band_to,
+                            "color": color,
+                            "clarity": clarity,
+                            "base_price_usd_per_carat": "",
+                            "is_active": True,
+                        }
+                    )
+    return pd.DataFrame(rows, columns=PRICE_TABLE_TEMPLATE_COLUMNS)
+
+
+def _price_table_template_xlsx() -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        _price_table_template_frame().to_excel(writer, index=False, sheet_name="price_table")
+    output.seek(0)
+    return output.getvalue()
+
+
+def _render_price_table_template_download() -> None:
+    st.markdown("#### Price table template")
+    st.warning("Значения в price table — USD за карат, не итоговая цена камня. Итоговая цена считается Pricing Engine.")
+    st.download_button(
+        label="Скачать шаблон price table",
+        data=_price_table_template_xlsx(),
+        file_name="kurgin_price_table_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 def _count_status(summary: pd.Series, *statuses: str) -> int:
     return int(sum(int(summary.get(status, 0)) for status in statuses))
 
@@ -381,6 +447,7 @@ def render_pricing_tab() -> None:
     c3.metric("Цена подтверждена", int(confirmed.sum()))
 
     _render_priced_batch_candidates(stones)
+    _render_price_table_template_download()
 
     st.warning("Preview не сохраняет рассчитанные цены. Для публикации нужен отдельный шаг подтверждения.")
     st.info("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json. Для сайта нужен отдельный Publication Gate.")
