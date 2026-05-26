@@ -214,20 +214,6 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     return out[STONE_COLS]
 
 
-def public_preview(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    result = df.copy()
-    bool_cols = ['show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed']
-    for col in bool_cols:
-        result[col] = result[col].astype(str).str.lower().isin(['true', '1', 'yes', 'да'])
-    return result[
-        result['show_in_catalog'] & result['is_mvp_eligible'] & result['has_lab_document'] &
-        result['physically_received'] & result['checked_by_kurgin'] & result['upload_confirmed'] &
-        result['current_status'].astype(str).str.lower().eq('available')
-    ]
-
-
 def upsert_batch_log(batch_number: str, upload_date, supplier_name: str, stones_count: int, notes: str) -> None:
     log = load_batches()
     log = log[~log['batch_number'].astype(str).eq(str(batch_number))]
