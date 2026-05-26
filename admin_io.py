@@ -11,7 +11,12 @@ BATCHES = DATA / 'upload_batches.csv'
 TAG_COLS = ['tag1', 'tag2', 'tag3', 'tag4', 'tag5', 'tag6']
 BASE_COLS = ['stone_id', 'title', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number', 'price_rub', 'karo_score']
 DETAIL_COLS = ['section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'supplier_rate', 'supplier_total']
-PRICE_COLS = ['price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'index_price_hint', 'admin_final_price_rub', 'admin_price_note', 'show_without_price']
+PRICE_COLS = [
+    'price_confirmed', 'availability_confirmed', 'price_source', 'price_status',
+    'index_price_hint', 'admin_final_price_rub', 'admin_price_note', 'show_without_price',
+    'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub',
+    'manual_usd_rub_rate', 'global_price_adjustment_percent', 'pricing_run_timestamp',
+]
 STATE_COLS = ['current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
 STONE_COLS = BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = ['batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes']
@@ -54,11 +59,17 @@ ALIASES = {
     'admin_final_price_rub': ['admin_final_price_rub', 'admin final price rub', 'final price rub', 'финальная цена'],
     'admin_price_note': ['admin_price_note', 'admin price note', 'price note', 'комментарий по цене'],
     'show_without_price': ['show_without_price', 'show without price', 'показывать без цены'],
+    'confirmed_public_price_rub': ['confirmed_public_price_rub', 'confirmed public price rub'],
+    'calculated_price_rub': ['calculated_price_rub', 'calculated price rub'],
+    'raw_calculated_price_rub': ['raw_calculated_price_rub', 'raw calculated price rub'],
+    'manual_usd_rub_rate': ['manual_usd_rub_rate', 'manual usd rub rate'],
+    'global_price_adjustment_percent': ['global_price_adjustment_percent', 'global price adjustment percent'],
+    'pricing_run_timestamp': ['pricing_run_timestamp', 'pricing run timestamp'],
     **{col: [col, col.replace('tag', 'teg'), col.replace('tag', 'тег')] for col in TAG_COLS},
 }
 
-TEXT_COLS = ['stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price', *TAG_COLS, 'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
-NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub']
+TEXT_COLS = ['stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price', 'pricing_run_timestamp', *TAG_COLS, 'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
+NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub', 'manual_usd_rub_rate', 'global_price_adjustment_percent']
 
 
 def key_name(value) -> str:
@@ -186,7 +197,7 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out['price_status'] = out['price_status'].replace('', pd.NA).fillna(price_missing.map({True: 'missing', False: 'needs_review'}))
     out['show_without_price'] = out['show_without_price'].apply(bool_value) | price_missing
 
-    text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number', 'price_source', 'price_status', 'admin_price_note']
+    text_cleanup_cols = TAG_COLS + ['cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'section', 'color_type', 'pair_id', 'side_type', 'stone_id', 'title', 'color', 'clarity', 'lab', 'report_number', 'price_source', 'price_status', 'admin_price_note', 'pricing_run_timestamp']
     for col in text_cleanup_cols:
         out[col] = out[col].fillna('').astype(str).replace({'nan': '', 'None': '', 'none': ''})
 
