@@ -7,6 +7,7 @@ from admin_io import load_batches, load_stones, save_stones
 from admin_log import load_admin_actions, write_admin_action
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
 from admin_page_settings import render_page_settings
+from admin_pricing import render_pricing_tab
 from admin_publication_rules import public_preview, publication_summary
 from admin_publish import render_publish_tab
 from admin_upload import render_upload_tab
@@ -104,17 +105,21 @@ def render_catalog_page(item: dict | None):
     if item_id == "catalog_import":
         render_upload_tab()
         return
+
     if item_id == "catalog_batches":
         render_batches_tab()
         return
+
     if item_id == "catalog_preview":
         preview = public_preview(load_stones())
         st.metric("Публичных камней", len(preview))
         st.dataframe(preview, use_container_width=True)
         return
+
     if item_id == "catalog_publication":
         render_publish_tab()
         return
+
     if item_id == "catalog_sections":
         public = public_preview(load_stones())
         if public.empty or "section" not in public.columns:
@@ -124,6 +129,7 @@ def render_catalog_page(item: dict | None):
         st.dataframe(data, use_container_width=True)
         st.write("MVP: 1.00–2.99 ct → основной; 3.00+ ct → крупные. Остальные разделы позже.")
         return
+
     if item_id == "catalog_statuses":
         df = load_stones()
         if df.empty or "current_status" not in df.columns:
@@ -131,15 +137,9 @@ def render_catalog_page(item: dict | None):
             return
         st.dataframe(df["current_status"].fillna("не задано").value_counts().rename_axis("status").reset_index(name="count"), use_container_width=True)
         return
+
     if item_id == "catalog_prices":
-        df = load_stones()
-        price = pd.to_numeric(df.get("price_rub", pd.Series(dtype=float)), errors="coerce").fillna(0)
-        confirmed = df.get("price_confirmed", pd.Series(dtype=str)).astype(str).str.lower().isin(["true", "1", "yes", "да"]) if not df.empty else pd.Series(dtype=bool)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("С ценой", int((price > 0).sum()))
-        c2.metric("Цена подтверждена", int(confirmed.sum()))
-        c3.metric("По запросу / без цены", int((price <= 0).sum()))
-        st.warning("price_rub=0 допустим только как request_price / checkout disabled. Для sellable нужна подтверждённая цена.")
+        render_pricing_tab()
         return
 
     render_stub_page({"title": "Каталог", "description": "Каталог"}, item)
