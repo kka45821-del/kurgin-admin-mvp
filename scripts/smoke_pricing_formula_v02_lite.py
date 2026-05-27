@@ -32,10 +32,10 @@ def base_purchase(status: str = "projected") -> PurchaseInput:
     )
 
 
-def base_batch() -> BatchInput:
+def base_batch(batch_fixed_expenses_rub: int = 80000, batch_total_supplier_currency: int = 4500) -> BatchInput:
     return BatchInput(
-        batch_fixed_expenses_rub=80000,
-        batch_total_supplier_currency=4500,
+        batch_fixed_expenses_rub=batch_fixed_expenses_rub,
+        batch_total_supplier_currency=batch_total_supplier_currency,
         batch_expense_allocation_method="value_share",
     )
 
@@ -61,9 +61,17 @@ def main() -> int:
     result = calculate_pricing_v02_lite(base_purchase(), base_batch(), base_formula())
     assert result.calculated_specialist_purchase_price_rub < result.calculated_specialist_client_display_price_rub < result.calculated_public_price_rub
     assert result.calculated_public_price_rub > 0
-    assert result.batch_expense_included_in_final_price is False
+    assert result.batch_expense_included_in_final_price is True
+    assert result.allocated_batch_expense_rub > 0
 
-    low_margin = run_after_tax_guard(final_price_rub=100, score_adjusted_cost_rub=200, tax_on_profit_percent=15)
+    no_expense = calculate_pricing_v02_lite(base_purchase(), base_batch(batch_fixed_expenses_rub=0), base_formula())
+    assert no_expense.calculated_public_price_rub < result.calculated_public_price_rub
+
+    zero_batch_total = calculate_pricing_v02_lite(base_purchase(), base_batch(batch_total_supplier_currency=0), base_formula())
+    assert zero_batch_total.allocated_batch_expense_rub == 0
+    assert zero_batch_total.calculated_public_price_rub > 0
+
+    low_margin = run_after_tax_guard(final_price_rub=100, protected_cost_rub=200, tax_on_profit_percent=15)
     assert low_margin["status"] == "blocked"
     assert ERROR_AFTER_TAX_PROFIT_NEGATIVE in low_margin["errors"]
 
