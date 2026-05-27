@@ -13,6 +13,8 @@ from admin_pricing_formula_v02_lite import (  # noqa: E402
     ERROR_AFTER_TAX_PROFIT_NEGATIVE,
     ERROR_BATCH_CURRENCY_MISMATCH,
     ERROR_PENDING_INVOICE_SAME_SHIPMENT,
+    ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE,
+    SPECIALIST_MODE_LOW_SCORE_FIXED_RULE,
     PurchaseInput,
     BatchInput,
     FormulaInput,
@@ -21,7 +23,12 @@ from admin_pricing_formula_v02_lite import (  # noqa: E402
 )
 
 
-def base_purchase(status: str = "projected", invoice_currency: str = "USD") -> PurchaseInput:
+def base_purchase(
+    status: str = "projected",
+    invoice_currency: str = "USD",
+    score: float = 90,
+    section: str = "main",
+) -> PurchaseInput:
     return PurchaseInput(
         base_purchase_price_per_ct_supplier_currency=300,
         carat=1.5,
@@ -30,6 +37,8 @@ def base_purchase(status: str = "projected", invoice_currency: str = "USD") -> P
         kurgin_score_coefficient=1.2,
         purchase_status=status,
         fx_buffer_percent=3,
+        kurgin_score=score,
+        section=section,
     )
 
 
@@ -85,6 +94,22 @@ def main() -> int:
 
     same_currency = calculate_pricing_v02_lite(base_purchase("projected", "INR"), base_batch(batch_total_currency_code="INR"), base_formula())
     assert ERROR_BATCH_CURRENCY_MISMATCH not in same_currency.errors
+
+    low_score = calculate_pricing_v02_lite(base_purchase(score=75, section="main"), base_batch(), base_formula())
+    assert low_score.specialist_client_mode_status == SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
+    assert low_score.calculated_specialist_client_display_price_rub == low_score.calculated_specialist_purchase_price_rub + 2000
+    assert low_score.calculated_public_price_rub == low_score.calculated_specialist_client_display_price_rub + 2000
+    assert low_score.calculated_specialist_purchase_price_rub < low_score.calculated_specialist_client_display_price_rub < low_score.calculated_public_price_rub
+
+    score_80 = calculate_pricing_v02_lite(base_purchase(score=80, section="main"), base_batch(), base_formula())
+    assert score_80.specialist_client_mode_status != SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
+
+    score_85_large = calculate_pricing_v02_lite(base_purchase(score=85, section="large"), base_batch(), base_formula())
+    assert score_85_large.specialist_client_mode_status != SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
+
+    colored_scope = calculate_pricing_v02_lite(base_purchase(score=90, section="colored"), base_batch(), base_formula())
+    assert colored_scope.price_status == "blocked"
+    assert ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE in colored_scope.errors
 
     low_margin = run_after_tax_guard(final_price_rub=100, protected_cost_rub=200, tax_on_profit_percent=15)
     assert low_margin["status"] == "blocked"
