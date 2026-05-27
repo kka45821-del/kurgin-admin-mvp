@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from admin_io import load_stones
+from admin_price_table import render_admin_price_table
 from admin_pricing_candidates import render_priced_batch_candidates
 from admin_pricing_legacy import render_legacy_pricing_preview
 from admin_pricing_shared import read_price_table
@@ -32,6 +33,7 @@ def render_pricing_tab() -> None:
     c3.metric("Цена подтверждена", int(confirmed.sum()))
 
     render_priced_batch_candidates(stones)
+    saved_price_table = render_admin_price_table()
     render_price_table_template_download()
 
     st.info("Если section пустой, Pricing Preview временно использует carat-rule: 1.00–2.99 ct = main, 3.00+ ct = large. В stones.csv это не сохраняется.")
@@ -39,6 +41,12 @@ def render_pricing_tab() -> None:
     st.info("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json. Для сайта нужен отдельный Publication Gate.")
 
     uploaded_file = st.file_uploader("Price table Excel/CSV", type=["xlsx", "xls", "csv"])
+    price_table_source = st.radio(
+        "Price table source",
+        ["Use saved admin price table", "Use uploaded price table"],
+        horizontal=True,
+    )
+
     col_rate, col_ref = st.columns(2)
     manual_rate = col_rate.number_input("Manual USD/RUB rate", min_value=0.0, value=100.0, step=0.1)
     reference_rate_enabled = col_ref.checkbox("Указать reference CBR USD/RUB", value=False)
@@ -50,18 +58,20 @@ def render_pricing_tab() -> None:
     threshold = col_threshold.number_input("Rate warning threshold RUB", min_value=0.0, value=3.0, step=0.1)
     adjustment = col_adjustment.number_input("Global price adjustment %", value=0.0, step=0.1)
 
-    if uploaded_file is None:
-        st.info("Загрузи price table, чтобы рассчитать preview.")
-        return
+    if price_table_source == "Use uploaded price table":
+        if uploaded_file is None:
+            st.info("Загрузи price table или выбери saved admin price table.")
+            return
+        try:
+            price_table = read_price_table(uploaded_file)
+        except Exception as exc:
+            st.error(f"Не удалось прочитать price table: {exc}")
+            return
+    else:
+        price_table = saved_price_table
 
-    try:
-        price_table = read_price_table(uploaded_file)
-    except Exception as exc:
-        st.error(f"Не удалось прочитать price table: {exc}")
-        return
-
-    st.markdown("#### Price table preview")
-    st.caption(f"Строк в price table: {len(price_table)}")
+    st.markdown("#### Active price table preview")
+    st.caption(f"Источник: {price_table_source}. Строк в price table: {len(price_table)}")
     st.dataframe(price_table.head(20), use_container_width=True)
 
     if stones.empty:
