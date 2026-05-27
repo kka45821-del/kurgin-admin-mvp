@@ -238,17 +238,17 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
         return
 
     c9, c10 = st.columns(2)
-    kurgin_fixed_margin = c9.number_input("kurgin_fixed_margin_usd_per_ct", min_value=0.0, value=120.0, step=1.0, key="v02_kurgin_fixed")
-    kurgin_variable_margin = c10.number_input("kurgin_variable_margin_percent", min_value=0.0, value=10.0, step=0.1, key="v02_kurgin_variable")
+    kurgin_fixed_margin = c9.number_input("kurgin_fixed_margin_usd_per_ct", min_value=0.0, value=80.0, step=1.0, key="v02_kurgin_fixed")
+    kurgin_variable_margin = c10.number_input("kurgin_variable_margin_percent", min_value=0.0, value=6.0, step=0.1, key="v02_kurgin_variable")
 
     c11, c12, c13 = st.columns(3)
-    tax_percent = c11.number_input("tax_on_profit_percent", min_value=0.0, value=15.0, step=0.1, key="v02_tax")
-    jeweler_fixed_margin = c12.number_input("jeweler_fixed_margin_usd_per_ct", min_value=0.0, value=90.0, step=1.0, key="v02_jeweler_fixed")
+    tax_percent = c11.number_input("tax_on_profit_percent", min_value=0.0, value=18.0, step=0.1, key="v02_tax")
+    jeweler_fixed_margin = c12.number_input("jeweler_fixed_margin_usd_per_ct", min_value=0.0, value=30.0, step=1.0, key="v02_jeweler_fixed")
     jeweler_variable_margin = c13.number_input("jeweler_variable_margin_percent", min_value=0.0, value=8.0, step=0.1, key="v02_jeweler_variable")
 
     c14, c15, c16 = st.columns(3)
-    public_fixed_extra = c14.number_input("public_fixed_extra_rub", min_value=0.0, value=10000.0, step=1000.0, key="v02_public_fixed")
-    public_extra_percent = c15.number_input("public_extra_percent", min_value=0.0, value=5.0, step=0.1, key="v02_public_percent")
+    public_fixed_extra = c14.number_input("public_fixed_extra_rub", min_value=0.0, value=5000.0, step=1000.0, key="v02_public_fixed")
+    public_extra_percent = c15.number_input("public_extra_percent", min_value=0.0, value=2.0, step=0.1, key="v02_public_percent")
     minimum_net_profit_fixed = c16.number_input("minimum_net_profit_fixed_rub", min_value=0.0, value=5000.0, step=1000.0, key="v02_min_profit_fixed")
 
     c17, c18, c19 = st.columns(3)
