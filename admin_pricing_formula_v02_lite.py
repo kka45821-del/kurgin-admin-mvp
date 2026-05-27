@@ -32,10 +32,18 @@ ERROR_AFTER_TAX_PROFIT_NEGATIVE = "after_tax_profit_negative"
 ERROR_PRICE_HIERARCHY_INVALID = "price_hierarchy_invalid"
 ERROR_PENDING_INVOICE_SAME_SHIPMENT = "pending_invoice_same_shipment_blocked"
 ERROR_BATCH_CURRENCY_MISMATCH = "batch_currency_mismatch"
+ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE = "section_outside_v02_lite_scope"
 ERROR_INVALID_INPUT = "invalid_input"
 
 WARNING_AFTER_TAX_PROFIT_BELOW_MINIMUM = "after_tax_profit_below_minimum"
 WARNING_PRICE_TOO_CLOSE_TO_PURCHASE_COST = "price_too_close_to_purchase_cost"
+
+LOW_SCORE_THRESHOLD = Decimal("80")
+LOW_SCORE_JEWELER_MARGIN_RUB = 2000
+LOW_SCORE_PUBLIC_SPREAD_RUB = 2000
+PRICING_SECTIONS = {"main", "large"}
+SPECIALIST_MODE_NORMAL = "normal"
+SPECIALIST_MODE_LOW_SCORE_FIXED_RULE = "low_score_fixed_rule"
 
 
 @dataclass(frozen=True)
@@ -48,6 +56,8 @@ class PurchaseInput:
     purchase_status: str = "projected"
     fx_buffer_percent: Any = Decimal("0")
     actual_purchase_total_rub: Any | None = None
+    kurgin_score: Any | None = None
+    section: str = ""
 
 
 @dataclass(frozen=True)
@@ -90,6 +100,7 @@ class PricingV02LiteResult:
     minimum_net_profit_required_rub: int
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
+    specialist_client_mode_status: str = SPECIALIST_MODE_NORMAL
     public_extra_rub: int = 0
     stone_share: float = 0.0
     fx_protected_purchase_cost_rub: int = 0
@@ -149,6 +160,10 @@ def _to_decimal(value: Any, default: Decimal | None = None) -> Decimal | None:
 
 def _normalize_currency(value: Any) -> str:
     return str(value or "").strip().upper()
+
+
+def _normalize_section(value: Any) -> str:
+    return str(value or "").strip().lower().replace("_", "-").replace(" ", "-").replace("-", "_")
 
 
 def _positive_decimal(value: Any, field_name: str, errors: list[str]) -> Decimal:
@@ -344,6 +359,11 @@ def calculate_pricing_v02_lite(
         errors.append(ERROR_PENDING_INVOICE_SAME_SHIPMENT)
         price_status = STATUS_BLOCKED
 
+    section = _normalize_section(purchase.section)
+    if section not in PRICING_SECTIONS:
+        errors.append(ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE)
+        price_status = STATUS_BLOCKED
+
     stone_purchase_total_currency = base_purchase_price * carat
     batch_total_supplier_currency = _decimal(batch.batch_total_supplier_currency)
     purchase_currency = _normalize_currency(purchase.invoice_currency)
@@ -371,26 +391,34 @@ def calculate_pricing_v02_lite(
     )
     specialist_purchase_per_ct = specialist_layer["specialist_purchase_per_ct"]
 
-    client_layer = calculate_specialist_client_display_price(
-        specialist_purchase_per_ct,
-        formula.jeweler_fixed_margin_usd_per_ct,
-        formula.jeweler_variable_margin_percent,
-    )
-    specialist_client_display_per_ct = client_layer["specialist_client_display_per_ct"]
-
     base_specialist_purchase_price_rub = ceil_to_1000(specialist_purchase_per_ct * carat * fx_rate)
-    base_specialist_client_display_price_rub = ceil_to_1000(specialist_client_display_per_ct * carat * fx_rate)
-    public_layer = calculate_public_price(
-        base_specialist_client_display_price_rub,
-        formula.public_fixed_extra_rub,
-        formula.public_extra_percent,
-    )
-    public_extra_rub = public_layer["public_extra_rub"]
-    base_public_price_rub = public_layer["public_price_rub"]
-
     specialist_purchase_price_rub = ceil_to_1000(Decimal(base_specialist_purchase_price_rub) + Decimal(allocated_batch_expense_rub))
-    specialist_client_display_price_rub = ceil_to_1000(Decimal(base_specialist_client_display_price_rub) + Decimal(allocated_batch_expense_rub))
-    public_price_rub = ceil_to_1000(Decimal(base_public_price_rub) + Decimal(allocated_batch_expense_rub))
+
+    score = _to_decimal(purchase.kurgin_score)
+    low_score_rule = section in PRICING_SECTIONS and score is not None and score < LOW_SCORE_THRESHOLD
+    specialist_client_mode_status = SPECIALIST_MODE_LOW_SCORE_FIXED_RULE if low_score_rule else SPECIALIST_MODE_NORMAL
+
+    if low_score_rule:
+        specialist_client_display_price_rub = specialist_purchase_price_rub + LOW_SCORE_JEWELER_MARGIN_RUB
+        public_price_rub = specialist_client_display_price_rub + LOW_SCORE_PUBLIC_SPREAD_RUB
+        public_extra_rub = LOW_SCORE_PUBLIC_SPREAD_RUB
+    else:
+        client_layer = calculate_specialist_client_display_price(
+            specialist_purchase_per_ct,
+            formula.jeweler_fixed_margin_usd_per_ct,
+            formula.jeweler_variable_margin_percent,
+        )
+        specialist_client_display_per_ct = client_layer["specialist_client_display_per_ct"]
+        base_specialist_client_display_price_rub = ceil_to_1000(specialist_client_display_per_ct * carat * fx_rate)
+        public_layer = calculate_public_price(
+            base_specialist_client_display_price_rub,
+            formula.public_fixed_extra_rub,
+            formula.public_extra_percent,
+        )
+        public_extra_rub = public_layer["public_extra_rub"]
+        base_public_price_rub = public_layer["public_price_rub"]
+        specialist_client_display_price_rub = ceil_to_1000(Decimal(base_specialist_client_display_price_rub) + Decimal(allocated_batch_expense_rub))
+        public_price_rub = ceil_to_1000(Decimal(base_public_price_rub) + Decimal(allocated_batch_expense_rub))
 
     projected_purchase_total_rub = int((stone_purchase_total_currency * fx_rate).to_integral_value(rounding=ROUND_CEILING))
     fx_buffer_percent = _decimal(purchase.fx_buffer_percent)
@@ -441,6 +469,7 @@ def calculate_pricing_v02_lite(
         minimum_net_profit_required_rub=minimum_net_profit_required_int,
         warnings=tuple(dict.fromkeys(warnings)),
         errors=tuple(dict.fromkeys(errors)),
+        specialist_client_mode_status=specialist_client_mode_status,
         public_extra_rub=public_extra_rub,
         stone_share=float(stone_share),
         fx_protected_purchase_cost_rub=fx_protected_purchase_cost_rub,
