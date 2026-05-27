@@ -70,6 +70,8 @@ customs_percent
 batch_fixed_expenses_rub
 batch_total_supplier_currency
 batch_expense_allocation_method = value_share
+kurgin_score
+section
 kurgin_score_coefficient
 kurgin_fixed_margin_usd_per_ct
 kurgin_variable_margin_percent
@@ -207,7 +209,56 @@ not to the final public price.
 
 ---
 
-## 5. Batch expenses in v0.2-lite
+## 5. Low-score fixed specialist rule
+
+For low-score stones in active v0.2-lite scope, ordinary dynamic jeweler / specialist margin must not apply.
+
+Rule:
+
+```text
+if section in ["main", "large"] and KURGIN Score < 80:
+    specialist_client_mode_status = low_score_fixed_rule
+    specialist_client_display_price_rub = specialist_purchase_price_rub + 2000
+    public_price_rub = specialist_client_display_price_rub + 2000
+```
+
+Normal formula path:
+
+```text
+if section in ["main", "large"] and KURGIN Score >= 80:
+    specialist_client_mode_status = normal
+    use normal v0.2-lite formula
+```
+
+Out-of-scope path:
+
+```text
+if section not in ["main", "large"]:
+    price_status = blocked / needs_review
+    error_or_warning = section_outside_v02_lite_scope
+```
+
+For `KURGIN Score < 80`, do **not** apply:
+
+- `jeweler_fixed_margin_usd_per_ct`;
+- `jeweler_variable_margin_percent`;
+- dynamic specialist margin;
+- score margin modifier.
+
+Public catalog restriction:
+
+The ordinary public catalog must not show:
+
+- `low_score_fixed_rule`;
+- specialist margin;
+- specialist client display price;
+- specialist purchase price.
+
+This information is for future specialist cabinet / professional mode only.
+
+---
+
+## 6. Batch expenses in v0.2-lite
 
 Batch fixed expenses must use value-share allocation.
 
@@ -243,9 +294,9 @@ The preview must not hide whether batch expenses were included in:
 
 ---
 
-## 6. Guards in v0.2-lite
+## 7. Guards in v0.2-lite
 
-v0.2-lite must include four mandatory guards.
+v0.2-lite must include mandatory guards.
 
 ### A. FX no-loss guard
 
@@ -279,13 +330,21 @@ if not specialist_purchase < specialist_client_display < public:
     error = price_hierarchy_invalid
 ```
 
+### E. Section scope guard
+
+```text
+if section not in ["main", "large"]:
+    price_status = blocked / needs_review
+    error_or_warning = section_outside_v02_lite_scope
+```
+
 All guards must run before selected confirmation.
 
 No confirmed public price may bypass these guards.
 
 ---
 
-## 7. What is not included in v0.2-lite
+## 8. What is not included in v0.2-lite
 
 v0.2-lite does not include:
 
@@ -307,7 +366,7 @@ Manual override is excluded from v0.2-lite because it can bypass the purpose of 
 
 ---
 
-## 8. What may be confirmed after v0.2-lite
+## 9. What may be confirmed after v0.2-lite
 
 For the first controlled test, do **not** confirm all three prices as public prices.
 
@@ -328,13 +387,14 @@ Do not write specialist price fields into public buyer display.
 
 ---
 
-## 9. What must not be done
+## 10. What must not be done
 
 Do not:
 
 - confirm `pending_invoice_same_shipment` stones;
 - write `specialist_purchase_price_rub` as public price;
 - show `specialist_client_display_price_rub` on the public site;
+- show `low_score_fixed_rule` on the public site;
 - enable checkout;
 - enable reserve;
 - publish priced catalog without guard status `ok`;
@@ -345,7 +405,7 @@ Do not:
 
 ---
 
-## 10. Future code micro-packages after this document
+## 11. Future code micro-packages after this document
 
 Implementation must be split into small packages.
 
@@ -396,7 +456,7 @@ Purpose:
 
 ---
 
-## 11. Final control statement
+## 12. Final control statement
 
 Pricing Formula v0.2-lite is a controlled bridge between documentation and code.
 
