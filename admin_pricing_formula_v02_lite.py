@@ -35,7 +35,6 @@ ERROR_INVALID_INPUT = "invalid_input"
 
 WARNING_AFTER_TAX_PROFIT_BELOW_MINIMUM = "after_tax_profit_below_minimum"
 WARNING_PRICE_TOO_CLOSE_TO_PURCHASE_COST = "price_too_close_to_purchase_cost"
-WARNING_BATCH_EXPENSE_NOT_INCLUDED_IN_FINAL_PRICE = "batch_expense_not_included_in_final_price"
 
 
 @dataclass(frozen=True)
@@ -92,6 +91,7 @@ class PricingV02LiteResult:
     public_extra_rub: int = 0
     stone_share: float = 0.0
     fx_protected_purchase_cost_rub: int = 0
+    protected_cost_rub: int = 0
     projected_purchase_total_rub: int = 0
     fx_buffer_rub: int = 0
     gross_margin_rub: int = 0
@@ -263,9 +263,9 @@ def run_fx_guard(final_price_rub: Any, fx_protected_purchase_cost_rub: Any, mini
     return {"status": STATUS_OK, "errors": (), "warnings": ()}
 
 
-def run_after_tax_guard(final_price_rub: Any, score_adjusted_cost_rub: Any, tax_on_profit_percent: Any) -> dict[str, Any]:
+def run_after_tax_guard(final_price_rub: Any, protected_cost_rub: Any, tax_on_profit_percent: Any) -> dict[str, Any]:
     final_price = _to_decimal(final_price_rub, Decimal("0")) or Decimal("0")
-    cost = _to_decimal(score_adjusted_cost_rub, Decimal("0")) or Decimal("0")
+    cost = _to_decimal(protected_cost_rub, Decimal("0")) or Decimal("0")
     tax_percent = _to_decimal(tax_on_profit_percent, Decimal("0")) or Decimal("0")
     gross_margin = final_price - cost
     tax_reserve = gross_margin * tax_percent / Decimal("100") if gross_margin > 0 else Decimal("0")
@@ -325,7 +325,7 @@ def calculate_pricing_v02_lite(
     if isinstance(formula, dict):
         formula = FormulaInput(**formula)
 
-    warnings: list[str] = [WARNING_BATCH_EXPENSE_NOT_INCLUDED_IN_FINAL_PRICE]
+    warnings: list[str] = []
     errors: list[str] = []
     price_status = STATUS_OK
 
@@ -365,15 +365,19 @@ def calculate_pricing_v02_lite(
     )
     specialist_client_display_per_ct = client_layer["specialist_client_display_per_ct"]
 
-    specialist_purchase_price_rub = ceil_to_1000(specialist_purchase_per_ct * carat * fx_rate)
-    specialist_client_display_price_rub = ceil_to_1000(specialist_client_display_per_ct * carat * fx_rate)
+    base_specialist_purchase_price_rub = ceil_to_1000(specialist_purchase_per_ct * carat * fx_rate)
+    base_specialist_client_display_price_rub = ceil_to_1000(specialist_client_display_per_ct * carat * fx_rate)
     public_layer = calculate_public_price(
-        specialist_client_display_price_rub,
+        base_specialist_client_display_price_rub,
         formula.public_fixed_extra_rub,
         formula.public_extra_percent,
     )
     public_extra_rub = public_layer["public_extra_rub"]
-    public_price_rub = public_layer["public_price_rub"]
+    base_public_price_rub = public_layer["public_price_rub"]
+
+    specialist_purchase_price_rub = ceil_to_1000(Decimal(base_specialist_purchase_price_rub) + Decimal(allocated_batch_expense_rub))
+    specialist_client_display_price_rub = ceil_to_1000(Decimal(base_specialist_client_display_price_rub) + Decimal(allocated_batch_expense_rub))
+    public_price_rub = ceil_to_1000(Decimal(base_public_price_rub) + Decimal(allocated_batch_expense_rub))
 
     projected_purchase_total_rub = int((stone_purchase_total_currency * fx_rate).to_integral_value(rounding=ROUND_CEILING))
     fx_buffer_percent = _decimal(purchase.fx_buffer_percent)
@@ -384,18 +388,18 @@ def calculate_pricing_v02_lite(
     else:
         fx_protected_purchase_cost_rub = projected_purchase_total_rub + fx_buffer_rub
 
-    protected_cost_rub = Decimal(fx_protected_purchase_cost_rub + allocated_batch_expense_rub)
+    score_adjusted_cost_rub = score_adjusted_cost_per_ct * carat * fx_rate
+    protected_cost_rub = score_adjusted_cost_rub + Decimal(allocated_batch_expense_rub)
+    fx_guard_cost_rub = Decimal(fx_protected_purchase_cost_rub) + Decimal(allocated_batch_expense_rub)
     minimum_net_profit_required_rub = max(
         _decimal(formula.minimum_net_profit_fixed_rub),
         protected_cost_rub * _decimal(formula.minimum_net_profit_percent_by_tier) / Decimal("100"),
     )
     minimum_net_profit_required_int = int(minimum_net_profit_required_rub.to_integral_value(rounding=ROUND_CEILING))
 
-    score_adjusted_cost_rub = score_adjusted_cost_per_ct * carat * fx_rate
-
     guard_results = [
-        run_fx_guard(public_price_rub, fx_protected_purchase_cost_rub, minimum_net_profit_required_int),
-        run_after_tax_guard(public_price_rub, score_adjusted_cost_rub, formula.tax_on_profit_percent),
+        run_fx_guard(public_price_rub, fx_guard_cost_rub, minimum_net_profit_required_int),
+        run_after_tax_guard(public_price_rub, protected_cost_rub, formula.tax_on_profit_percent),
     ]
     after_tax = guard_results[1]
     guard_results.append(run_minimum_profit_guard(after_tax["net_profit_after_tax_rub"], minimum_net_profit_required_int))
@@ -418,7 +422,7 @@ def calculate_pricing_v02_lite(
         base_cost_per_ct=float(base_cost_per_ct),
         score_adjusted_cost_per_ct=float(score_adjusted_cost_per_ct),
         allocated_batch_expense_rub=allocated_batch_expense_rub,
-        batch_expense_included_in_final_price=False,
+        batch_expense_included_in_final_price=True,
         kurgin_tax_reserve_per_ct=float(specialist_layer["kurgin_tax_reserve_per_ct"]),
         net_profit_after_tax_rub=int(after_tax["net_profit_after_tax_rub"]),
         minimum_net_profit_required_rub=minimum_net_profit_required_int,
@@ -427,6 +431,7 @@ def calculate_pricing_v02_lite(
         public_extra_rub=public_extra_rub,
         stone_share=float(stone_share),
         fx_protected_purchase_cost_rub=fx_protected_purchase_cost_rub,
+        protected_cost_rub=int(protected_cost_rub.to_integral_value(rounding=ROUND_CEILING)),
         projected_purchase_total_rub=projected_purchase_total_rub,
         fx_buffer_rub=fx_buffer_rub,
         gross_margin_rub=int(after_tax["gross_margin_rub"]),
