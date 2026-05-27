@@ -13,8 +13,12 @@ from admin_pricing_formula_v02_lite import (  # noqa: E402
     ERROR_AFTER_TAX_PROFIT_NEGATIVE,
     ERROR_BATCH_CURRENCY_MISMATCH,
     ERROR_PENDING_INVOICE_SAME_SHIPMENT,
+    ERROR_ROUND_SCORE_REQUIRED,
     ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE,
+    SCORE_STATUS_NON_ROUND_SCORE_NOT_REQUIRED,
+    SCORE_STATUS_ROUND_SCORE_REQUIRED,
     SPECIALIST_MODE_LOW_SCORE_FIXED_RULE,
+    SPECIALIST_MODE_NORMAL_NON_ROUND_SCORE_NOT_REQUIRED,
     PurchaseInput,
     BatchInput,
     FormulaInput,
@@ -26,14 +30,16 @@ from admin_pricing_formula_v02_lite import (  # noqa: E402
 def base_purchase(
     status: str = "projected",
     invoice_currency: str = "USD",
-    score: float = 90,
+    score=90,
     section: str = "main",
+    shape: str = "Round",
 ) -> PurchaseInput:
     return PurchaseInput(
         base_purchase_price_per_ct_supplier_currency=300,
         carat=1.5,
         invoice_currency=invoice_currency,
         fx_rate_rub_per_invoice_currency=90,
+        shape=shape,
         kurgin_score_coefficient=1.2,
         purchase_status=status,
         fx_buffer_percent=3,
@@ -55,7 +61,7 @@ def base_batch(
     )
 
 
-def base_formula() -> FormulaInput:
+def base_formula(low_score_jeweler_margin_rub: int = 2000, low_score_public_spread_rub: int = 2000) -> FormulaInput:
     return FormulaInput(
         customs_percent=40,
         freight_percent=0,
@@ -69,6 +75,8 @@ def base_formula() -> FormulaInput:
         public_extra_percent=5,
         minimum_net_profit_fixed_rub=5000,
         minimum_net_profit_percent_by_tier=5,
+        low_score_jeweler_margin_rub=low_score_jeweler_margin_rub,
+        low_score_public_spread_rub=low_score_public_spread_rub,
     )
 
 
@@ -95,19 +103,36 @@ def main() -> int:
     same_currency = calculate_pricing_v02_lite(base_purchase("projected", "INR"), base_batch(batch_total_currency_code="INR"), base_formula())
     assert ERROR_BATCH_CURRENCY_MISMATCH not in same_currency.errors
 
-    low_score = calculate_pricing_v02_lite(base_purchase(score=75, section="main"), base_batch(), base_formula())
+    low_score = calculate_pricing_v02_lite(base_purchase(score=75, section="main", shape="Round"), base_batch(), base_formula())
     assert low_score.specialist_client_mode_status == SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
     assert low_score.calculated_specialist_client_display_price_rub == low_score.calculated_specialist_purchase_price_rub + 2000
     assert low_score.calculated_public_price_rub == low_score.calculated_specialist_client_display_price_rub + 2000
     assert low_score.calculated_specialist_purchase_price_rub < low_score.calculated_specialist_client_display_price_rub < low_score.calculated_public_price_rub
 
-    score_80 = calculate_pricing_v02_lite(base_purchase(score=80, section="main"), base_batch(), base_formula())
+    custom_low_score = calculate_pricing_v02_lite(base_purchase(score=75, section="main", shape="Round"), base_batch(), base_formula(2500, 3000))
+    assert custom_low_score.calculated_specialist_client_display_price_rub == custom_low_score.calculated_specialist_purchase_price_rub + 2500
+    assert custom_low_score.calculated_public_price_rub == custom_low_score.calculated_specialist_client_display_price_rub + 3000
+    assert custom_low_score.low_score_jeweler_margin_rub == 2500
+    assert custom_low_score.low_score_public_spread_rub == 3000
+
+    score_80 = calculate_pricing_v02_lite(base_purchase(score=80, section="main", shape="Round"), base_batch(), base_formula())
     assert score_80.specialist_client_mode_status != SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
 
-    score_85_large = calculate_pricing_v02_lite(base_purchase(score=85, section="large"), base_batch(), base_formula())
+    score_85_large = calculate_pricing_v02_lite(base_purchase(score=85, section="large", shape="Round"), base_batch(), base_formula())
     assert score_85_large.specialist_client_mode_status != SPECIALIST_MODE_LOW_SCORE_FIXED_RULE
 
-    colored_scope = calculate_pricing_v02_lite(base_purchase(score=90, section="colored"), base_batch(), base_formula())
+    non_round_missing_score = calculate_pricing_v02_lite(base_purchase(score="", section="main", shape="Oval"), base_batch(), base_formula())
+    assert non_round_missing_score.price_status != "blocked"
+    assert non_round_missing_score.effective_kurgin_score_coefficient == 1.0
+    assert non_round_missing_score.score_status == SCORE_STATUS_NON_ROUND_SCORE_NOT_REQUIRED
+    assert non_round_missing_score.specialist_client_mode_status == SPECIALIST_MODE_NORMAL_NON_ROUND_SCORE_NOT_REQUIRED
+
+    round_missing_score = calculate_pricing_v02_lite(base_purchase(score="", section="main", shape="Round"), base_batch(), base_formula())
+    assert round_missing_score.price_status == "blocked"
+    assert ERROR_ROUND_SCORE_REQUIRED in round_missing_score.errors
+    assert round_missing_score.score_status == SCORE_STATUS_ROUND_SCORE_REQUIRED
+
+    colored_scope = calculate_pricing_v02_lite(base_purchase(score=90, section="colored", shape="Round"), base_batch(), base_formula())
     assert colored_scope.price_status == "blocked"
     assert ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE in colored_scope.errors
 
