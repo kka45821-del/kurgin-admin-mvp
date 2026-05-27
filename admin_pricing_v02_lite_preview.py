@@ -43,6 +43,36 @@ V02_LITE_PREVIEW_COLUMNS = [
 ]
 
 
+DEFAULT_PREVIEW_SETTINGS: dict[str, float] = {
+    "customs_percent": 40.0,
+    "freight_percent": 5.0,
+    "unexpected_expenses_percent": 5.0,
+    "kurgin_fixed_margin_usd_per_ct": 80.0,
+    "kurgin_variable_margin_percent": 6.0,
+    "tax_on_profit_percent": 18.0,
+    "jeweler_fixed_margin_usd_per_ct": 30.0,
+    "jeweler_variable_margin_percent": 8.0,
+    "public_fixed_extra_rub": 5000.0,
+    "public_extra_percent": 2.0,
+    "low_score_jeweler_margin_rub": 2000.0,
+    "low_score_public_spread_rub": 2000.0,
+    "fx_buffer_percent": 3.0,
+    "minimum_net_profit_fixed_rub": 5000.0,
+    "minimum_net_profit_percent_by_tier": 5.0,
+}
+
+
+def _preview_settings(formula_settings: dict[str, Any] | None = None) -> dict[str, float]:
+    settings = dict(DEFAULT_PREVIEW_SETTINGS)
+    if isinstance(formula_settings, dict):
+        for key, default_value in settings.items():
+            try:
+                settings[key] = float(formula_settings.get(key, default_value))
+            except (TypeError, ValueError):
+                settings[key] = default_value
+    return settings
+
+
 def build_v02_lite_preview(
     stones: pd.DataFrame,
     price_table: pd.DataFrame,
@@ -194,15 +224,16 @@ def v02_lite_summary(preview: pd.DataFrame) -> dict[str, int]:
     }
 
 
-def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> None:
+def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame, formula_settings: dict[str, Any] | None = None) -> None:
     st.markdown("### Pricing Formula v0.2-lite Preview")
     st.warning("v0.2-lite preview не сохраняет цены, не подтверждает price_confirmed, не публикует catalog.json и не включает checkout.")
 
+    settings = _preview_settings(formula_settings)
     currency_options = ["USD", "INR", "RUB"]
     c1, c2, c3 = st.columns(3)
     invoice_currency = c1.selectbox("Invoice currency", currency_options, index=0, key="v02_invoice_currency")
     fx_rate = c2.number_input("fx_rate_rub_per_invoice_currency", min_value=0.0, value=100.0, step=0.1, key="v02_fx_rate")
-    fx_buffer_percent = c3.number_input("fx_buffer_percent", min_value=0.0, value=3.0, step=0.1, key="v02_fx_buffer")
+    fx_buffer_percent = c3.number_input("fx_buffer_percent", min_value=0.0, value=settings["fx_buffer_percent"], step=0.1, key="v02_fx_buffer")
 
     c_currency, c_batch_total = st.columns(2)
     batch_total_currency = c_currency.selectbox(
@@ -213,9 +244,9 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
     )
 
     c4, c5, c6 = st.columns(3)
-    customs_percent = c4.number_input("customs_percent", min_value=0.0, value=40.0, step=0.1, key="v02_customs")
-    freight_percent = c5.number_input("freight_percent", min_value=0.0, value=5.0, step=0.1, key="v02_freight")
-    unexpected_percent = c6.number_input("unexpected_expenses_percent", min_value=0.0, value=5.0, step=0.1, key="v02_unexpected")
+    customs_percent = c4.number_input("customs_percent", min_value=0.0, value=settings["customs_percent"], step=0.1, key="v02_customs")
+    freight_percent = c5.number_input("freight_percent", min_value=0.0, value=settings["freight_percent"], step=0.1, key="v02_freight")
+    unexpected_percent = c6.number_input("unexpected_expenses_percent", min_value=0.0, value=settings["unexpected_expenses_percent"], step=0.1, key="v02_unexpected")
 
     c7, c8 = st.columns(2)
     batch_fixed_expenses = c7.number_input("batch_fixed_expenses_rub", min_value=0.0, value=0.0, step=1000.0, key="v02_batch_expenses")
@@ -238,23 +269,23 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
         return
 
     c9, c10 = st.columns(2)
-    kurgin_fixed_margin = c9.number_input("kurgin_fixed_margin_usd_per_ct", min_value=0.0, value=80.0, step=1.0, key="v02_kurgin_fixed")
-    kurgin_variable_margin = c10.number_input("kurgin_variable_margin_percent", min_value=0.0, value=6.0, step=0.1, key="v02_kurgin_variable")
+    kurgin_fixed_margin = c9.number_input("kurgin_fixed_margin_usd_per_ct", min_value=0.0, value=settings["kurgin_fixed_margin_usd_per_ct"], step=1.0, key="v02_kurgin_fixed")
+    kurgin_variable_margin = c10.number_input("kurgin_variable_margin_percent", min_value=0.0, value=settings["kurgin_variable_margin_percent"], step=0.1, key="v02_kurgin_variable")
 
     c11, c12, c13 = st.columns(3)
-    tax_percent = c11.number_input("tax_on_profit_percent", min_value=0.0, value=18.0, step=0.1, key="v02_tax")
-    jeweler_fixed_margin = c12.number_input("jeweler_fixed_margin_usd_per_ct", min_value=0.0, value=30.0, step=1.0, key="v02_jeweler_fixed")
-    jeweler_variable_margin = c13.number_input("jeweler_variable_margin_percent", min_value=0.0, value=8.0, step=0.1, key="v02_jeweler_variable")
+    tax_percent = c11.number_input("tax_on_profit_percent", min_value=0.0, value=settings["tax_on_profit_percent"], step=0.1, key="v02_tax")
+    jeweler_fixed_margin = c12.number_input("jeweler_fixed_margin_usd_per_ct", min_value=0.0, value=settings["jeweler_fixed_margin_usd_per_ct"], step=1.0, key="v02_jeweler_fixed")
+    jeweler_variable_margin = c13.number_input("jeweler_variable_margin_percent", min_value=0.0, value=settings["jeweler_variable_margin_percent"], step=0.1, key="v02_jeweler_variable")
 
     c14, c15, c16 = st.columns(3)
-    public_fixed_extra = c14.number_input("public_fixed_extra_rub", min_value=0.0, value=5000.0, step=1000.0, key="v02_public_fixed")
-    public_extra_percent = c15.number_input("public_extra_percent", min_value=0.0, value=2.0, step=0.1, key="v02_public_percent")
-    minimum_net_profit_fixed = c16.number_input("minimum_net_profit_fixed_rub", min_value=0.0, value=5000.0, step=1000.0, key="v02_min_profit_fixed")
+    public_fixed_extra = c14.number_input("public_fixed_extra_rub", min_value=0.0, value=settings["public_fixed_extra_rub"], step=1000.0, key="v02_public_fixed")
+    public_extra_percent = c15.number_input("public_extra_percent", min_value=0.0, value=settings["public_extra_percent"], step=0.1, key="v02_public_percent")
+    minimum_net_profit_fixed = c16.number_input("minimum_net_profit_fixed_rub", min_value=0.0, value=settings["minimum_net_profit_fixed_rub"], step=1000.0, key="v02_min_profit_fixed")
 
     c17, c18, c19 = st.columns(3)
-    minimum_net_profit_percent = c17.number_input("minimum_net_profit_percent_by_tier", min_value=0.0, value=5.0, step=0.1, key="v02_min_profit_percent")
-    low_score_jeweler_margin = c18.number_input("low_score_jeweler_margin_rub", min_value=0.0, value=2000.0, step=500.0, key="v02_low_score_jeweler_margin")
-    low_score_public_spread = c19.number_input("low_score_public_spread_rub", min_value=0.0, value=2000.0, step=500.0, key="v02_low_score_public_spread")
+    minimum_net_profit_percent = c17.number_input("minimum_net_profit_percent_by_tier", min_value=0.0, value=settings["minimum_net_profit_percent_by_tier"], step=0.1, key="v02_min_profit_percent")
+    low_score_jeweler_margin = c18.number_input("low_score_jeweler_margin_rub", min_value=0.0, value=settings["low_score_jeweler_margin_rub"], step=500.0, key="v02_low_score_jeweler_margin")
+    low_score_public_spread = c19.number_input("low_score_public_spread_rub", min_value=0.0, value=settings["low_score_public_spread_rub"], step=500.0, key="v02_low_score_public_spread")
 
     params = {
         "invoice_currency": invoice_currency,
