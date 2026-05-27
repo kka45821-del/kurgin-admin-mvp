@@ -33,17 +33,27 @@ ERROR_PRICE_HIERARCHY_INVALID = "price_hierarchy_invalid"
 ERROR_PENDING_INVOICE_SAME_SHIPMENT = "pending_invoice_same_shipment_blocked"
 ERROR_BATCH_CURRENCY_MISMATCH = "batch_currency_mismatch"
 ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE = "section_outside_v02_lite_scope"
+ERROR_ROUND_SCORE_REQUIRED = "round_score_required"
 ERROR_INVALID_INPUT = "invalid_input"
 
 WARNING_AFTER_TAX_PROFIT_BELOW_MINIMUM = "after_tax_profit_below_minimum"
 WARNING_PRICE_TOO_CLOSE_TO_PURCHASE_COST = "price_too_close_to_purchase_cost"
 
 LOW_SCORE_THRESHOLD = Decimal("80")
-LOW_SCORE_JEWELER_MARGIN_RUB = 2000
-LOW_SCORE_PUBLIC_SPREAD_RUB = 2000
+DEFAULT_LOW_SCORE_JEWELER_MARGIN_RUB = Decimal("2000")
+DEFAULT_LOW_SCORE_PUBLIC_SPREAD_RUB = Decimal("2000")
 PRICING_SECTIONS = {"main", "large"}
+ROUND_SHAPES = {"round", "round_brilliant", "round_brilliant_cut", "rbc", "круг"}
+
 SPECIALIST_MODE_NORMAL = "normal"
 SPECIALIST_MODE_LOW_SCORE_FIXED_RULE = "low_score_fixed_rule"
+SPECIALIST_MODE_NORMAL_NON_ROUND_SCORE_NOT_REQUIRED = "normal_non_round_score_not_required"
+
+SCORE_STATUS_NORMAL = "normal"
+SCORE_STATUS_LOW_SCORE_FIXED_RULE = "low_score_fixed_rule"
+SCORE_STATUS_ROUND_SCORE_REQUIRED = "round_score_required"
+SCORE_STATUS_NON_ROUND_SCORE_NOT_REQUIRED = "non_round_score_not_required"
+SCORE_STATUS_SECTION_OUTSIDE_SCOPE = "section_outside_v02_lite_scope"
 
 
 @dataclass(frozen=True)
@@ -52,6 +62,7 @@ class PurchaseInput:
     carat: Any
     invoice_currency: str
     fx_rate_rub_per_invoice_currency: Any
+    shape: str = ""
     kurgin_score_coefficient: Any = Decimal("1")
     purchase_status: str = "projected"
     fx_buffer_percent: Any = Decimal("0")
@@ -82,6 +93,8 @@ class FormulaInput:
     public_extra_percent: Any = Decimal("0")
     minimum_net_profit_fixed_rub: Any = Decimal("0")
     minimum_net_profit_percent_by_tier: Any = Decimal("0")
+    low_score_jeweler_margin_rub: Any = DEFAULT_LOW_SCORE_JEWELER_MARGIN_RUB
+    low_score_public_spread_rub: Any = DEFAULT_LOW_SCORE_PUBLIC_SPREAD_RUB
 
 
 @dataclass(frozen=True)
@@ -101,6 +114,10 @@ class PricingV02LiteResult:
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
     specialist_client_mode_status: str = SPECIALIST_MODE_NORMAL
+    low_score_jeweler_margin_rub: int = 0
+    low_score_public_spread_rub: int = 0
+    effective_kurgin_score_coefficient: float = 1.0
+    score_status: str = SCORE_STATUS_NORMAL
     public_extra_rub: int = 0
     stone_share: float = 0.0
     fx_protected_purchase_cost_rub: int = 0
@@ -162,7 +179,7 @@ def _normalize_currency(value: Any) -> str:
     return str(value or "").strip().upper()
 
 
-def _normalize_section(value: Any) -> str:
+def _normalize_token(value: Any) -> str:
     return str(value or "").strip().lower().replace("_", "-").replace(" ", "-").replace("-", "_")
 
 
@@ -334,6 +351,85 @@ def _combine_status(current: str, incoming: str) -> str:
     return STATUS_OK
 
 
+def _resolve_score_context(purchase: PurchaseInput) -> dict[str, Any]:
+    section = _normalize_token(purchase.section)
+    shape = _normalize_token(purchase.shape)
+    score = _to_decimal(purchase.kurgin_score)
+    is_round = shape in ROUND_SHAPES
+    in_scope = section in PRICING_SECTIONS
+
+    if not in_scope:
+        return {
+            "section": section,
+            "shape": shape,
+            "score": score,
+            "is_round": is_round,
+            "score_status": SCORE_STATUS_SECTION_OUTSIDE_SCOPE,
+            "specialist_client_mode_status": SPECIALIST_MODE_NORMAL,
+            "effective_coefficient": _decimal(purchase.kurgin_score_coefficient, Decimal("1")),
+            "errors": [ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE],
+        }
+
+    if is_round and (score is None or score <= 0):
+        return {
+            "section": section,
+            "shape": shape,
+            "score": score,
+            "is_round": is_round,
+            "score_status": SCORE_STATUS_ROUND_SCORE_REQUIRED,
+            "specialist_client_mode_status": SPECIALIST_MODE_NORMAL,
+            "effective_coefficient": Decimal("1"),
+            "errors": [ERROR_ROUND_SCORE_REQUIRED],
+        }
+
+    if not is_round and (score is None or score <= 0):
+        return {
+            "section": section,
+            "shape": shape,
+            "score": score,
+            "is_round": is_round,
+            "score_status": SCORE_STATUS_NON_ROUND_SCORE_NOT_REQUIRED,
+            "specialist_client_mode_status": SPECIALIST_MODE_NORMAL_NON_ROUND_SCORE_NOT_REQUIRED,
+            "effective_coefficient": Decimal("1"),
+            "errors": [],
+        }
+
+    if is_round and score is not None and score < LOW_SCORE_THRESHOLD:
+        return {
+            "section": section,
+            "shape": shape,
+            "score": score,
+            "is_round": is_round,
+            "score_status": SCORE_STATUS_LOW_SCORE_FIXED_RULE,
+            "specialist_client_mode_status": SPECIALIST_MODE_LOW_SCORE_FIXED_RULE,
+            "effective_coefficient": _decimal(purchase.kurgin_score_coefficient, Decimal("1")),
+            "errors": [],
+        }
+
+    if not is_round:
+        return {
+            "section": section,
+            "shape": shape,
+            "score": score,
+            "is_round": is_round,
+            "score_status": SCORE_STATUS_NON_ROUND_SCORE_NOT_REQUIRED,
+            "specialist_client_mode_status": SPECIALIST_MODE_NORMAL_NON_ROUND_SCORE_NOT_REQUIRED,
+            "effective_coefficient": Decimal("1"),
+            "errors": [],
+        }
+
+    return {
+        "section": section,
+        "shape": shape,
+        "score": score,
+        "is_round": is_round,
+        "score_status": SCORE_STATUS_NORMAL,
+        "specialist_client_mode_status": SPECIALIST_MODE_NORMAL,
+        "effective_coefficient": _decimal(purchase.kurgin_score_coefficient, Decimal("1")),
+        "errors": [],
+    }
+
+
 def calculate_pricing_v02_lite(
     purchase: PurchaseInput | dict[str, Any],
     batch: BatchInput | dict[str, Any],
@@ -354,14 +450,14 @@ def calculate_pricing_v02_lite(
     base_purchase_price = _positive_decimal(purchase.base_purchase_price_per_ct_supplier_currency, "base_purchase_price_per_ct_supplier_currency", errors)
     fx_rate = _positive_decimal(purchase.fx_rate_rub_per_invoice_currency, "fx_rate_rub_per_invoice_currency", errors)
 
+    score_context = _resolve_score_context(purchase)
+    errors.extend(score_context["errors"])
+    if score_context["errors"]:
+        price_status = STATUS_BLOCKED
+
     purchase_status = str(purchase.purchase_status or "").strip().lower()
     if purchase_status == "pending_invoice_same_shipment":
         errors.append(ERROR_PENDING_INVOICE_SAME_SHIPMENT)
-        price_status = STATUS_BLOCKED
-
-    section = _normalize_section(purchase.section)
-    if section not in PRICING_SECTIONS:
-        errors.append(ERROR_SECTION_OUTSIDE_V02_LITE_SCOPE)
         price_status = STATUS_BLOCKED
 
     stone_purchase_total_currency = base_purchase_price * carat
@@ -375,13 +471,14 @@ def calculate_pricing_v02_lite(
     stone_share = calculate_stone_share(stone_purchase_total_currency, batch_total_supplier_currency)
     allocated_batch_expense_rub = calculate_allocated_batch_expense(batch.batch_fixed_expenses_rub, stone_share)
 
+    effective_coefficient = score_context["effective_coefficient"]
     base_cost_per_ct = calculate_base_cost_per_ct(
         base_purchase_price,
         formula.customs_percent,
         formula.freight_percent,
         formula.unexpected_expenses_percent,
     )
-    score_adjusted_cost_per_ct = calculate_score_adjusted_cost_per_ct(base_cost_per_ct, purchase.kurgin_score_coefficient)
+    score_adjusted_cost_per_ct = calculate_score_adjusted_cost_per_ct(base_cost_per_ct, effective_coefficient)
 
     specialist_layer = calculate_specialist_purchase_price(
         score_adjusted_cost_per_ct,
@@ -394,14 +491,13 @@ def calculate_pricing_v02_lite(
     base_specialist_purchase_price_rub = ceil_to_1000(specialist_purchase_per_ct * carat * fx_rate)
     specialist_purchase_price_rub = ceil_to_1000(Decimal(base_specialist_purchase_price_rub) + Decimal(allocated_batch_expense_rub))
 
-    score = _to_decimal(purchase.kurgin_score)
-    low_score_rule = section in PRICING_SECTIONS and score is not None and score < LOW_SCORE_THRESHOLD
-    specialist_client_mode_status = SPECIALIST_MODE_LOW_SCORE_FIXED_RULE if low_score_rule else SPECIALIST_MODE_NORMAL
+    low_score_jeweler_margin = _decimal(formula.low_score_jeweler_margin_rub, DEFAULT_LOW_SCORE_JEWELER_MARGIN_RUB)
+    low_score_public_spread = _decimal(formula.low_score_public_spread_rub, DEFAULT_LOW_SCORE_PUBLIC_SPREAD_RUB)
 
-    if low_score_rule:
-        specialist_client_display_price_rub = specialist_purchase_price_rub + LOW_SCORE_JEWELER_MARGIN_RUB
-        public_price_rub = specialist_client_display_price_rub + LOW_SCORE_PUBLIC_SPREAD_RUB
-        public_extra_rub = LOW_SCORE_PUBLIC_SPREAD_RUB
+    if score_context["specialist_client_mode_status"] == SPECIALIST_MODE_LOW_SCORE_FIXED_RULE:
+        specialist_client_display_price_rub = specialist_purchase_price_rub + int(low_score_jeweler_margin.to_integral_value(rounding=ROUND_CEILING))
+        public_price_rub = specialist_client_display_price_rub + int(low_score_public_spread.to_integral_value(rounding=ROUND_CEILING))
+        public_extra_rub = int(low_score_public_spread.to_integral_value(rounding=ROUND_CEILING))
     else:
         client_layer = calculate_specialist_client_display_price(
             specialist_purchase_per_ct,
@@ -469,7 +565,11 @@ def calculate_pricing_v02_lite(
         minimum_net_profit_required_rub=minimum_net_profit_required_int,
         warnings=tuple(dict.fromkeys(warnings)),
         errors=tuple(dict.fromkeys(errors)),
-        specialist_client_mode_status=specialist_client_mode_status,
+        specialist_client_mode_status=score_context["specialist_client_mode_status"],
+        low_score_jeweler_margin_rub=int(low_score_jeweler_margin.to_integral_value(rounding=ROUND_CEILING)),
+        low_score_public_spread_rub=int(low_score_public_spread.to_integral_value(rounding=ROUND_CEILING)),
+        effective_kurgin_score_coefficient=float(effective_coefficient),
+        score_status=score_context["score_status"],
         public_extra_rub=public_extra_rub,
         stone_share=float(stone_share),
         fx_protected_purchase_cost_rub=fx_protected_purchase_cost_rub,
