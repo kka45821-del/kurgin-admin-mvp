@@ -218,8 +218,12 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
     unexpected_percent = c6.number_input("unexpected_expenses_percent", min_value=0.0, value=5.0, step=0.1, key="v02_unexpected")
 
     c7, c8 = st.columns(2)
-    batch_fixed_expenses = c7.number_input("batch_fixed_expenses_rub", min_value=0.0, value=80000.0, step=1000.0, key="v02_batch_expenses")
+    batch_fixed_expenses = c7.number_input("batch_fixed_expenses_rub", min_value=0.0, value=0.0, step=1000.0, key="v02_batch_expenses")
     batch_total_supplier_currency = c_batch_total.number_input("batch_total_supplier_currency", min_value=0.0, value=0.0, step=100.0, key="v02_batch_total")
+    st.warning(
+        "Фиксированные расходы партии необязательны. Заполняйте batch_fixed_expenses_rub только если эти расходы НЕ учтены "
+        "в freight_percent / unexpected_expenses_percent. Не учитывайте доставку дважды."
+    )
 
     if batch_total_supplier_currency > 0 and batch_total_currency != invoice_currency:
         st.error(
