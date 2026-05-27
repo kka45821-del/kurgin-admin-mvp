@@ -24,7 +24,11 @@ V02_LITE_PREVIEW_COLUMNS = [
     "section",
     "kurgin_score",
     "kurgin_score_coefficient",
+    "effective_kurgin_score_coefficient",
+    "score_status",
     "specialist_client_mode_status",
+    "low_score_jeweler_margin_rub",
+    "low_score_public_spread_rub",
     "calculated_specialist_purchase_price_rub",
     "calculated_specialist_client_display_price_rub",
     "calculated_public_price_rub",
@@ -76,7 +80,11 @@ def build_v02_lite_preview(
                     "section": stone_dict.get("section", ""),
                     "kurgin_score": score_value,
                     "kurgin_score_coefficient": coefficient,
+                    "effective_kurgin_score_coefficient": None,
+                    "score_status": "",
                     "specialist_client_mode_status": "",
+                    "low_score_jeweler_margin_rub": params["low_score_jeweler_margin_rub"],
+                    "low_score_public_spread_rub": params["low_score_public_spread_rub"],
                     "calculated_specialist_purchase_price_rub": None,
                     "calculated_specialist_client_display_price_rub": None,
                     "calculated_public_price_rub": None,
@@ -97,6 +105,7 @@ def build_v02_lite_preview(
             carat=stone_dict.get("carat", 0),
             invoice_currency=params["invoice_currency"],
             fx_rate_rub_per_invoice_currency=params["fx_rate_rub_per_invoice_currency"],
+            shape=stone_dict.get("shape", ""),
             kurgin_score_coefficient=coefficient,
             purchase_status=str(stone_dict.get("purchase_status") or "projected"),
             fx_buffer_percent=params["fx_buffer_percent"],
@@ -122,6 +131,8 @@ def build_v02_lite_preview(
             public_extra_percent=params["public_extra_percent"],
             minimum_net_profit_fixed_rub=params["minimum_net_profit_fixed_rub"],
             minimum_net_profit_percent_by_tier=params["minimum_net_profit_percent_by_tier"],
+            low_score_jeweler_margin_rub=params["low_score_jeweler_margin_rub"],
+            low_score_public_spread_rub=params["low_score_public_spread_rub"],
         )
         result = calculate_pricing_v02_lite(purchase, batch, formula)
         rows.append(
@@ -134,7 +145,11 @@ def build_v02_lite_preview(
                 "section": stone_dict.get("section", ""),
                 "kurgin_score": score_value,
                 "kurgin_score_coefficient": coefficient,
+                "effective_kurgin_score_coefficient": result.effective_kurgin_score_coefficient,
+                "score_status": result.score_status,
                 "specialist_client_mode_status": result.specialist_client_mode_status,
+                "low_score_jeweler_margin_rub": result.low_score_jeweler_margin_rub,
+                "low_score_public_spread_rub": result.low_score_public_spread_rub,
                 "calculated_specialist_purchase_price_rub": result.calculated_specialist_purchase_price_rub,
                 "calculated_specialist_client_display_price_rub": result.calculated_specialist_client_display_price_rub,
                 "calculated_public_price_rub": result.calculated_public_price_rub,
@@ -232,7 +247,10 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
     public_extra_percent = c15.number_input("public_extra_percent", min_value=0.0, value=5.0, step=0.1, key="v02_public_percent")
     minimum_net_profit_fixed = c16.number_input("minimum_net_profit_fixed_rub", min_value=0.0, value=5000.0, step=1000.0, key="v02_min_profit_fixed")
 
-    minimum_net_profit_percent = st.number_input("minimum_net_profit_percent_by_tier", min_value=0.0, value=5.0, step=0.1, key="v02_min_profit_percent")
+    c17, c18, c19 = st.columns(3)
+    minimum_net_profit_percent = c17.number_input("minimum_net_profit_percent_by_tier", min_value=0.0, value=5.0, step=0.1, key="v02_min_profit_percent")
+    low_score_jeweler_margin = c18.number_input("low_score_jeweler_margin_rub", min_value=0.0, value=2000.0, step=500.0, key="v02_low_score_jeweler_margin")
+    low_score_public_spread = c19.number_input("low_score_public_spread_rub", min_value=0.0, value=2000.0, step=500.0, key="v02_low_score_public_spread")
 
     params = {
         "invoice_currency": invoice_currency,
@@ -253,6 +271,8 @@ def render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) -> 
         "public_extra_percent": public_extra_percent,
         "minimum_net_profit_fixed_rub": minimum_net_profit_fixed,
         "minimum_net_profit_percent_by_tier": minimum_net_profit_percent,
+        "low_score_jeweler_margin_rub": low_score_jeweler_margin,
+        "low_score_public_spread_rub": low_score_public_spread,
     }
 
     if st.button("Рассчитать v0.2-lite preview", type="secondary"):
