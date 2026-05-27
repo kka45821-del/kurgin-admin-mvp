@@ -31,6 +31,7 @@ ERROR_BELOW_FX_PROTECTED_PURCHASE_COST = "below_fx_protected_purchase_cost"
 ERROR_AFTER_TAX_PROFIT_NEGATIVE = "after_tax_profit_negative"
 ERROR_PRICE_HIERARCHY_INVALID = "price_hierarchy_invalid"
 ERROR_PENDING_INVOICE_SAME_SHIPMENT = "pending_invoice_same_shipment_blocked"
+ERROR_BATCH_CURRENCY_MISMATCH = "batch_currency_mismatch"
 ERROR_INVALID_INPUT = "invalid_input"
 
 WARNING_AFTER_TAX_PROFIT_BELOW_MINIMUM = "after_tax_profit_below_minimum"
@@ -54,6 +55,7 @@ class BatchInput:
     batch_fixed_expenses_rub: Any
     batch_total_supplier_currency: Any
     batch_expense_allocation_method: str = "value_share"
+    batch_total_currency_code: str = ""
 
 
 @dataclass(frozen=True)
@@ -143,6 +145,10 @@ def _to_decimal(value: Any, default: Decimal | None = None) -> Decimal | None:
         return Decimal(number_text)
     except InvalidOperation:
         return default
+
+
+def _normalize_currency(value: Any) -> str:
+    return str(value or "").strip().upper()
 
 
 def _positive_decimal(value: Any, field_name: str, errors: list[str]) -> Decimal:
@@ -339,7 +345,14 @@ def calculate_pricing_v02_lite(
         price_status = STATUS_BLOCKED
 
     stone_purchase_total_currency = base_purchase_price * carat
-    stone_share = calculate_stone_share(stone_purchase_total_currency, batch.batch_total_supplier_currency)
+    batch_total_supplier_currency = _decimal(batch.batch_total_supplier_currency)
+    purchase_currency = _normalize_currency(purchase.invoice_currency)
+    batch_currency = _normalize_currency(batch.batch_total_currency_code)
+    if batch_total_supplier_currency > 0 and (not batch_currency or batch_currency != purchase_currency):
+        errors.append(ERROR_BATCH_CURRENCY_MISMATCH)
+        price_status = STATUS_BLOCKED
+
+    stone_share = calculate_stone_share(stone_purchase_total_currency, batch_total_supplier_currency)
     allocated_batch_expense_rub = calculate_allocated_batch_expense(batch.batch_fixed_expenses_rub, stone_share)
 
     base_cost_per_ct = calculate_base_cost_per_ct(
