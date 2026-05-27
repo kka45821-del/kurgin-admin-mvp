@@ -7,6 +7,7 @@ from admin_io import load_stones
 from admin_price_table import render_admin_price_table
 from admin_pricing_candidates import render_priced_batch_candidates
 from admin_pricing_legacy import render_legacy_pricing_preview
+from admin_pricing_settings import render_pricing_formula_settings
 from admin_pricing_shared import read_price_table
 from admin_pricing_template import render_price_table_template_download
 from admin_pricing_v02_lite_preview import render_v02_lite_preview
@@ -34,6 +35,7 @@ def render_pricing_tab() -> None:
 
     render_priced_batch_candidates(stones)
     saved_price_table = render_admin_price_table()
+    formula_settings = render_pricing_formula_settings()
     render_price_table_template_download()
 
     st.info("Если section пустой, Pricing Preview временно использует carat-rule: 1.00–2.99 ct = main, 3.00+ ct = large. В stones.csv это не сохраняется.")
@@ -77,8 +79,7 @@ def render_pricing_tab() -> None:
     if stones.empty:
         st.info("stones.csv пустой. Сначала загрузи каталог камней.")
         return
-
-    render_v02_lite_preview(stones, price_table)
+    render_v02_lite_preview(stones, price_table, formula_settings=formula_settings)
     render_legacy_pricing_preview(
         stones=stones,
         price_table=price_table,
