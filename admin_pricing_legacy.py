@@ -174,6 +174,9 @@ def render_legacy_pricing_preview(
     threshold: float,
     adjustment: float,
 ) -> None:
+    st.markdown("### Legacy Pricing Engine Preview / v1")
+    st.warning("Legacy confirmation не относится к Pricing Formula v0.2-lite.")
+
     if st.button("Рассчитать preview", type="primary"):
         st.session_state["pricing_preview"] = build_pricing_preview(
             stones=stones,
@@ -235,7 +238,8 @@ def render_legacy_pricing_preview(
     )
     st.caption("Audit log: pricing_preview_run записан. Preview сам по себе цены не сохраняет.")
 
-    st.markdown("#### Mass Price Confirmation")
+    st.markdown("#### Legacy Mass Price Confirmation")
+    st.warning("Legacy confirmation не относится к Pricing Formula v0.2-lite.")
     st.warning("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json и НЕ включает checkout.")
 
     confirmable = confirmable_preview(preview)
