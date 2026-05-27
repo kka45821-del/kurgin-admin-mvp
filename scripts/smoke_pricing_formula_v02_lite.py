@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 from admin_pricing_formula_v02_lite import (  # noqa: E402
     ERROR_AFTER_TAX_PROFIT_NEGATIVE,
+    ERROR_BATCH_CURRENCY_MISMATCH,
     ERROR_PENDING_INVOICE_SAME_SHIPMENT,
     PurchaseInput,
     BatchInput,
@@ -20,11 +21,11 @@ from admin_pricing_formula_v02_lite import (  # noqa: E402
 )
 
 
-def base_purchase(status: str = "projected") -> PurchaseInput:
+def base_purchase(status: str = "projected", invoice_currency: str = "USD") -> PurchaseInput:
     return PurchaseInput(
         base_purchase_price_per_ct_supplier_currency=300,
         carat=1.5,
-        invoice_currency="USD",
+        invoice_currency=invoice_currency,
         fx_rate_rub_per_invoice_currency=90,
         kurgin_score_coefficient=1.2,
         purchase_status=status,
@@ -32,11 +33,16 @@ def base_purchase(status: str = "projected") -> PurchaseInput:
     )
 
 
-def base_batch(batch_fixed_expenses_rub: int = 80000, batch_total_supplier_currency: int = 4500) -> BatchInput:
+def base_batch(
+    batch_fixed_expenses_rub: int = 80000,
+    batch_total_supplier_currency: int = 4500,
+    batch_total_currency_code: str = "USD",
+) -> BatchInput:
     return BatchInput(
         batch_fixed_expenses_rub=batch_fixed_expenses_rub,
         batch_total_supplier_currency=batch_total_supplier_currency,
         batch_expense_allocation_method="value_share",
+        batch_total_currency_code=batch_total_currency_code,
     )
 
 
@@ -63,6 +69,7 @@ def main() -> int:
     assert result.calculated_public_price_rub > 0
     assert result.batch_expense_included_in_final_price is True
     assert result.allocated_batch_expense_rub > 0
+    assert ERROR_BATCH_CURRENCY_MISMATCH not in result.errors
 
     no_expense = calculate_pricing_v02_lite(base_purchase(), base_batch(batch_fixed_expenses_rub=0), base_formula())
     assert no_expense.calculated_public_price_rub < result.calculated_public_price_rub
@@ -70,6 +77,14 @@ def main() -> int:
     zero_batch_total = calculate_pricing_v02_lite(base_purchase(), base_batch(batch_total_supplier_currency=0), base_formula())
     assert zero_batch_total.allocated_batch_expense_rub == 0
     assert zero_batch_total.calculated_public_price_rub > 0
+    assert ERROR_BATCH_CURRENCY_MISMATCH not in zero_batch_total.errors
+
+    mismatch = calculate_pricing_v02_lite(base_purchase("projected", "USD"), base_batch(batch_total_currency_code="INR"), base_formula())
+    assert mismatch.price_status == "blocked"
+    assert ERROR_BATCH_CURRENCY_MISMATCH in mismatch.errors
+
+    same_currency = calculate_pricing_v02_lite(base_purchase("projected", "INR"), base_batch(batch_total_currency_code="INR"), base_formula())
+    assert ERROR_BATCH_CURRENCY_MISMATCH not in same_currency.errors
 
     low_margin = run_after_tax_guard(final_price_rub=100, protected_cost_rub=200, tax_on_profit_percent=15)
     assert low_margin["status"] == "blocked"
