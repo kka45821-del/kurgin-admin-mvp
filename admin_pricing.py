@@ -44,6 +44,7 @@ V02_LITE_PREVIEW_COLUMNS = [
     "section",
     "kurgin_score",
     "kurgin_score_coefficient",
+    "specialist_client_mode_status",
     "calculated_specialist_purchase_price_rub",
     "calculated_specialist_client_display_price_rub",
     "calculated_public_price_rub",
@@ -449,6 +450,7 @@ def _build_v02_lite_preview(
         if effective_section:
             stone_dict["section"] = effective_section
 
+        score_value = _stone_value(stone_dict, "karo_score", "kurgin_score", "score")
         legacy_result = calculate_price(
             stone=stone_dict,
             price_table=price_table,
@@ -471,8 +473,9 @@ def _build_v02_lite_preview(
                     "color": stone_dict.get("color", ""),
                     "clarity": stone_dict.get("clarity", ""),
                     "section": stone_dict.get("section", ""),
-                    "kurgin_score": _stone_value(stone_dict, "karo_score", "kurgin_score", "score"),
+                    "kurgin_score": score_value,
                     "kurgin_score_coefficient": coefficient,
+                    "specialist_client_mode_status": "",
                     "calculated_specialist_purchase_price_rub": None,
                     "calculated_specialist_client_display_price_rub": None,
                     "calculated_public_price_rub": None,
@@ -496,6 +499,8 @@ def _build_v02_lite_preview(
             kurgin_score_coefficient=coefficient,
             purchase_status=str(stone_dict.get("purchase_status") or "projected"),
             fx_buffer_percent=params["fx_buffer_percent"],
+            kurgin_score=score_value,
+            section=stone_dict.get("section", ""),
         )
         batch = BatchInput(
             batch_fixed_expenses_rub=params["batch_fixed_expenses_rub"],
@@ -526,8 +531,9 @@ def _build_v02_lite_preview(
                 "color": stone_dict.get("color", ""),
                 "clarity": stone_dict.get("clarity", ""),
                 "section": stone_dict.get("section", ""),
-                "kurgin_score": _stone_value(stone_dict, "karo_score", "kurgin_score", "score"),
+                "kurgin_score": score_value,
                 "kurgin_score_coefficient": coefficient,
+                "specialist_client_mode_status": result.specialist_client_mode_status,
                 "calculated_specialist_purchase_price_rub": result.calculated_specialist_purchase_price_rub,
                 "calculated_specialist_client_display_price_rub": result.calculated_specialist_client_display_price_rub,
                 "calculated_public_price_rub": result.calculated_public_price_rub,
