@@ -193,32 +193,34 @@ specialist_purchase_per_ct + jeweler_margin_per_ct
 
 ---
 
-## 8. Score handling rules
+## 8. Score handling rules: Index coefficient layer vs Sale pricing layer
 
-### Round main / large without Score
+KURGIN Score is used in two different layers. These rules do not conflict because they do not control the same part of the price.
 
-```text
-if section in ["main", "large"]
-and shape = Round
-and KURGIN Score is missing:
-    price_status = blocked
-    error = round_score_required
-    score_status = round_score_required
-```
+### A. Index / score coefficient layer
 
-### Non-Round main / large without Score
+This layer controls quality-adjusted cost / index uplift through `effective_kurgin_score_coefficient`.
 
 ```text
-if section in ["main", "large"]
-and shape != Round
-and KURGIN Score is missing:
-    effective_kurgin_score_coefficient = 1.0
-    score_status = non_round_score_not_required
-    specialist_client_mode_status = normal_non_round_score_not_required
-    not blocked
+if KURGIN Score <= 80:
+    effective_kurgin_score_coefficient may be 1.0
+    no premium index uplift may apply
+
+if KURGIN Score > 80:
+    score coefficient / index uplift may apply
 ```
 
-### Round main / large with Score < 80
+This layer affects:
+
+```text
+score_adjusted_cost_per_ct = base_cost_per_ct × effective_kurgin_score_coefficient
+```
+
+It does not directly define specialist sale spread, client display spread, public spread, checkout status or public catalog labels.
+
+### B. Sale price specialist / client / public layer
+
+This layer controls how the three sale prices are separated after specialist purchase price is calculated.
 
 ```text
 if section in ["main", "large"]
@@ -236,14 +238,53 @@ low_score_jeweler_margin_rub = 2000
 low_score_public_spread_rub = 2000
 ```
 
-For this low-score fixed rule, do not apply:
+For this low-score fixed sale rule, do not apply:
 
 - `jeweler_fixed_margin_usd_per_ct`;
 - `jeweler_variable_margin_percent`;
 - dynamic specialist margin;
 - score margin modifier.
 
-### Round main / large with Score >= 80
+### C. Layer separation rule
+
+```text
+Index coefficient layer controls effective_kurgin_score_coefficient.
+Sale pricing layer controls specialist/client/public spread.
+```
+
+Therefore:
+
+```text
+KURGIN Score <= 80 may mean no premium index uplift.
+KURGIN Score < 80 may also trigger fixed specialist sale spread for Round main/large stones.
+```
+
+These are separate rules. The first rule controls index / quality coefficient. The second rule controls sale price spread.
+
+### D. Round main / large without Score
+
+```text
+if section in ["main", "large"]
+and shape = Round
+and KURGIN Score is missing:
+    price_status = blocked
+    error = round_score_required
+    score_status = round_score_required
+```
+
+### E. Non-Round main / large without Score
+
+```text
+if section in ["main", "large"]
+and shape != Round
+and KURGIN Score is missing:
+    effective_kurgin_score_coefficient = 1.0
+    score_status = non_round_score_not_required
+    specialist_client_mode_status = normal_non_round_score_not_required
+    not blocked
+```
+
+### F. Round main / large with Score >= 80
 
 ```text
 if section in ["main", "large"]
@@ -253,9 +294,9 @@ and KURGIN Score >= 80:
     use normal v0.2-lite formula
 ```
 
-`KURGIN Score = 80.00` is normal path, not low-score path.
+`KURGIN Score = 80.00` is normal sale pricing path, not low-score fixed sale path.
 
-### Out of current v0.2-lite scope
+### G. Out of current v0.2-lite scope
 
 ```text
 if section not in ["main", "large"]:
@@ -334,9 +375,9 @@ if net_profit_after_tax_rub < minimum_net_profit_required_rub:
 
 ## 12. Legacy score margin modifier
 
-Legacy score margin modifier is historical design input only. It must not override the low-score fixed rule.
+Legacy score margin modifier is historical design input only. It must not override the low-score fixed sale rule.
 
-For `Round main/large KURGIN Score < 80`, low-score fixed specialist rule overrides dynamic specialist margin and score margin modifier.
+For `Round main/large KURGIN Score < 80`, low-score fixed specialist sale rule overrides dynamic specialist margin and score margin modifier.
 
 ---
 
