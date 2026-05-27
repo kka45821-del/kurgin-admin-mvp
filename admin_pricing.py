@@ -501,6 +501,7 @@ def _build_v02_lite_preview(
             batch_fixed_expenses_rub=params["batch_fixed_expenses_rub"],
             batch_total_supplier_currency=params["batch_total_supplier_currency"],
             batch_expense_allocation_method="value_share",
+            batch_total_currency_code=params["batch_total_currency"],
         )
         formula = FormulaInput(
             customs_percent=params["customs_percent"],
@@ -575,10 +576,19 @@ def _render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) ->
     st.markdown("### Pricing Formula v0.2-lite Preview")
     st.warning("v0.2-lite preview не сохраняет цены, не подтверждает price_confirmed, не публикует catalog.json и не включает checkout.")
 
+    currency_options = ["USD", "INR", "RUB"]
     c1, c2, c3 = st.columns(3)
-    invoice_currency = c1.selectbox("Invoice currency", ["USD", "INR", "RUB"], index=0, key="v02_invoice_currency")
+    invoice_currency = c1.selectbox("Invoice currency", currency_options, index=0, key="v02_invoice_currency")
     fx_rate = c2.number_input("fx_rate_rub_per_invoice_currency", min_value=0.0, value=100.0, step=0.1, key="v02_fx_rate")
     fx_buffer_percent = c3.number_input("fx_buffer_percent", min_value=0.0, value=3.0, step=0.1, key="v02_fx_buffer")
+
+    c_currency, c_batch_total = st.columns(2)
+    batch_total_currency = c_currency.selectbox(
+        "batch_total_currency",
+        currency_options,
+        index=currency_options.index(invoice_currency),
+        key="v02_batch_total_currency",
+    )
 
     c4, c5, c6 = st.columns(3)
     customs_percent = c4.number_input("customs_percent", min_value=0.0, value=40.0, step=0.1, key="v02_customs")
@@ -587,7 +597,19 @@ def _render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) ->
 
     c7, c8 = st.columns(2)
     batch_fixed_expenses = c7.number_input("batch_fixed_expenses_rub", min_value=0.0, value=80000.0, step=1000.0, key="v02_batch_expenses")
-    batch_total_supplier_currency = c8.number_input("batch_total_supplier_currency", min_value=0.0, value=0.0, step=100.0, key="v02_batch_total")
+    batch_total_supplier_currency = c_batch_total.number_input("batch_total_supplier_currency", min_value=0.0, value=0.0, step=100.0, key="v02_batch_total")
+
+    if batch_total_supplier_currency > 0 and batch_total_currency != invoice_currency:
+        st.error(
+            "batch_total_supplier_currency должен быть в той же валюте, что и "
+            "base_purchase_price_per_ct_supplier_currency / invoice_currency. "
+            "Сейчас нельзя смешивать USD stone prices и INR batch total."
+        )
+        st.info(
+            "Если price table в USD, batch_total_supplier_currency тоже должен быть USD. "
+            "Если batch total введён в INR, нужно использовать INR purchase prices или пересчитать batch total в USD/выбрать invoice_currency=INR."
+        )
+        return
 
     c9, c10 = st.columns(2)
     kurgin_fixed_margin = c9.number_input("kurgin_fixed_margin_usd_per_ct", min_value=0.0, value=120.0, step=1.0, key="v02_kurgin_fixed")
@@ -607,6 +629,7 @@ def _render_v02_lite_preview(stones: pd.DataFrame, price_table: pd.DataFrame) ->
 
     params = {
         "invoice_currency": invoice_currency,
+        "batch_total_currency": batch_total_currency,
         "fx_rate_rub_per_invoice_currency": fx_rate,
         "fx_buffer_percent": fx_buffer_percent,
         "customs_percent": customs_percent,
