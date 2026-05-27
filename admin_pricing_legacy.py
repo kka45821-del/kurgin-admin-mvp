@@ -240,6 +240,7 @@ def render_legacy_pricing_preview(
 
     st.markdown("#### Legacy Mass Price Confirmation")
     st.warning("Legacy confirmation не относится к Pricing Formula v0.2-lite.")
+    st.warning("Не использовать для новых v0.2-lite цен. Этот блок подтверждает старый legacy calculated_price_rub.")
     st.warning("Подтверждение цен сохраняет цены в stones.csv, но НЕ публикует catalog.json и НЕ включает checkout.")
 
     confirmable = confirmable_preview(preview)
@@ -258,7 +259,16 @@ def render_legacy_pricing_preview(
     selected = edited_selection[edited_selection["confirm"] == True].copy()
     st.caption(f"Выбрано к подтверждению: {len(selected)}")
 
-    if st.button("Подтвердить выбранные цены", type="primary", disabled=selected.empty):
+    legacy_confirmation_understanding = st.checkbox(
+        "Я понимаю, что это legacy v1 confirmation, не Pricing Formula v0.2-lite",
+        key="legacy_v1_confirmation_understanding",
+    )
+
+    if st.button(
+        "Подтвердить выбранные цены",
+        type="primary",
+        disabled=selected.empty or not legacy_confirmation_understanding,
+    ):
         confirmed_count = apply_mass_price_confirmation(
             selected=selected,
             manual_usd_rub_rate=float(params.get("manual_rate") or manual_rate),
