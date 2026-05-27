@@ -41,7 +41,7 @@ request_price ≠ checkout
 
 Pricing Formula v0.2 defines a safer future pricing model for KURGIN.
 
-It expands the earlier v0.2 logic from a score-margin modifier into a universal model that supports:
+It supports:
 
 - batch-based purchasing;
 - multi-currency supplier invoices;
@@ -52,9 +52,10 @@ It expands the earlier v0.2 logic from a score-margin modifier into a universal 
 - pending supplement invoices;
 - specialist and public price separation;
 - after-tax no-loss protection;
-- minimum net profit protection.
+- minimum net profit protection;
+- low-score fixed specialist mode for `main` / `large` stones below KURGIN Score 80.
 
-This document is a design source for a future code package. It does not approve commercial use by itself.
+This document is a design source for future and current v0.2-lite code packages. It does not approve commercial use by itself.
 
 ---
 
@@ -62,9 +63,7 @@ This document is a design source for a future code package. It does not approve 
 
 KURGIN pricing must not be tied to a single supplier shipment or one fixed purchasing pattern.
 
-Each batch / supply shipment must have its own parameters.
-
-Required batch-level fields:
+Each batch / supply shipment must have its own parameters:
 
 ```text
 batch_id
@@ -86,17 +85,7 @@ batch_expense_allocation_method
 purchase_status
 ```
 
-The formula must work for future batches with:
-
-- INR invoices;
-- USD invoices;
-- RUB invoices;
-- different suppliers;
-- different contract dates;
-- different numbers of stones;
-- different fixed expenses;
-- supplement invoices;
-- partial / pending purchase-cost locks.
+The formula must work for future batches with INR, USD, RUB, different suppliers, different contract dates, different fixed expenses and supplement invoices.
 
 Batch data is a pricing input. It is not public catalog copy.
 
@@ -105,8 +94,6 @@ Batch data is a pricing input. It is not public catalog copy.
 ## 3. First real INR batch reference
 
 The first expected real batch may be used as a reference scenario.
-
-Reference fields:
 
 ```text
 contract_date = 2026-05-10
@@ -129,13 +116,11 @@ customs is separate from 80000 RUB
 
 Customs must be calculated separately from the invoice / purchase cost.
 
-The 20 extra stones from the USD file are not a separate ordinary public catalog batch at this stage. They are a supplement invoice / pending invoice in the same shipment until purchase cost is locked.
+The 20 extra stones from the USD file are a supplement invoice / pending invoice in the same shipment until purchase cost is locked.
 
 ---
 
 ## 4. Multi-currency purchase and FX risk guard
-
-The purchase model must separate supplier currency, settlement currency, KURGIN payment currency and public display currency.
 
 Currency layers:
 
@@ -215,8 +200,6 @@ This guard must not be bypassed by manual confirmation.
 
 Fixed batch expenses must not be divided equally by the number of stones.
 
-Equal division is unsafe because stones may have very different purchase values.
-
 Use value-share allocation:
 
 ```text
@@ -225,13 +208,6 @@ stone_purchase_total_currency / total_batch_purchase_currency
 
 allocated_batch_expense_rub =
 batch_fixed_expenses_rub × stone_share
-```
-
-For the first reference batch:
-
-```text
-batch_fixed_expenses_rub = 80000 RUB
-batch_fixed_expenses_note = air freight + broker
 ```
 
 For supplement invoices in the same shipment:
@@ -255,8 +231,6 @@ This keeps batch expense allocation proportional to value, not to item count.
 
 Customs must be calculated separately from air freight, broker fees, fixed batch expenses, margin and public price.
 
-Formula:
-
 ```text
 customs_rub =
 purchase_total_rub × customs_percent / 100
@@ -268,21 +242,11 @@ For the first reference batch:
 customs_percent = 40
 ```
 
-Customs is separate from:
-
-- air freight;
-- broker;
-- batch_fixed_expenses_rub;
-- KURGIN margin;
-- specialist / jeweler margin;
-- public extra;
-- public price.
+Customs is separate from air freight, broker, batch fixed expenses, margins and public price.
 
 ---
 
 ## 7. Pending supplement stones
-
-The 20 additional stones from the USD file are treated as the same shipment only after they are connected to a supplement invoice / pending invoice.
 
 Required status:
 
@@ -294,10 +258,8 @@ Rules for pending supplement stones:
 
 - they may be shown only as `request_price` if otherwise allowed by catalog visibility rules;
 - they must not enter a confirmed priced batch;
-- public price must not be confirmed for them;
-- checkout must not be enabled;
-- reserve must not be enabled;
-- sold status must not be enabled;
+- public price must not be confirmed;
+- checkout / reserve / sold must not be enabled;
 - after supplement invoice / purchase cost lock, they may enter full shipment recalculation.
 
 Pending supplement stones cannot bypass FX guard, after-tax guard or minimum profit guard.
@@ -305,20 +267,6 @@ Pending supplement stones cannot bypass FX guard, after-tax guard or minimum pro
 ---
 
 ## 8. Improved per-carat formula
-
-Pricing Formula v0.2 uses a per-carat structure.
-
-User logic preserved:
-
-- purchase = price per ct;
-- customs;
-- air freight / broker / other expenses;
-- fixed KURGIN margin per carat;
-- small variable KURGIN percentage so profit grows smoothly;
-- tax reserve on profit, not on the whole amount;
-- fixed jeweler margin per carat;
-- small variable jeweler percentage so profit grows smoothly;
-- public website extra.
 
 Base cost:
 
@@ -361,7 +309,7 @@ score_adjusted_cost_per_ct
 + kurgin_tax_reserve_per_ct
 ```
 
-Jeweler / specialist client layer:
+Jeweler / specialist client layer for normal path:
 
 ```text
 jeweler_margin_per_ct =
@@ -399,23 +347,62 @@ public_price_rub =
 ceil_to_1000(specialist_client_display_price_rub + public_extra_rub)
 ```
 
-Important pricing principle:
+Control rule:
 
 ```text
 KURGIN Score coefficient should apply to the cost layer,
 not to the final public price.
 ```
 
-Reason:
+---
 
-- it adjusts quality economics;
-- it does not inflate fixed margins;
-- it does not inflate public extra;
-- it keeps the formula smoother and safer.
+## 9. Low-score fixed specialist rule
+
+For low-score stones in active scope, ordinary dynamic jeweler / specialist margin must not apply.
+
+Rule:
+
+```text
+if section in ["main", "large"] and KURGIN Score < 80:
+    specialist_client_mode_status = low_score_fixed_rule
+    specialist_client_display_price_rub = specialist_purchase_price_rub + 2000
+    public_price_rub = specialist_client_display_price_rub + 2000
+```
+
+Normal path:
+
+```text
+if section in ["main", "large"] and KURGIN Score >= 80:
+    specialist_client_mode_status = normal
+    use normal v0.2-lite formula
+```
+
+Out-of-scope path:
+
+```text
+if section not in ["main", "large"]:
+    v0.2-lite specialist/public pricing is out of current scope
+```
+
+For `KURGIN Score < 80`, do **not** apply:
+
+- `jeweler_fixed_margin_usd_per_ct`;
+- `jeweler_variable_margin_percent`;
+- dynamic specialist margin;
+- score margin modifier.
+
+Ordinary public catalog must not show:
+
+- `low_score_fixed_rule`;
+- specialist margin;
+- specialist client display price;
+- specialist purchase price.
+
+This information is for future specialist cabinet / professional mode only.
 
 ---
 
-## 9. KURGIN Score logic
+## 10. KURGIN Score logic
 
 KURGIN Score logic in Pricing Formula v0.2:
 
@@ -435,14 +422,6 @@ score_adjusted_cost_per_ct
 
 It does not run inside public card display.
 
-Public card rules:
-
-```text
-public card does not multiply price by carat
-public card does not apply score coefficient
-public card only shows already confirmed price
-```
-
 Invoice / packing list may not contain KURGIN Score.
 
 KURGIN Score may be calculated separately before purchase.
@@ -457,9 +436,7 @@ Round main/large without KURGIN Score cannot be confirmed as a priced stone.
 
 ---
 
-## 10. Three final prices
-
-Pricing Formula v0.2 separates three final prices:
+## 11. Three final prices
 
 ```text
 specialist_purchase_price_rub
@@ -472,43 +449,25 @@ public_price_rub
 Definitions:
 
 ```text
-specialist_purchase_price_rub =
-price that the verified specialist pays KURGIN
-
-specialist_client_display_price_rub =
-price that the specialist may show to their client
-
-public_price_rub =
-price for an ordinary public-site buyer
+specialist_purchase_price_rub = price that the verified specialist pays KURGIN
+specialist_client_display_price_rub = price that the specialist may show to their client
+public_price_rub = price for an ordinary public-site buyer
 ```
 
 These prices must remain separate fields.
 
-Do not derive one public display mode by hiding numbers inside the same price field.
-
 ---
 
-## 11. After-tax no-loss guard
+## 12. After-tax no-loss guard
 
 No confirmed price can be approved if projected net profit after tax is negative.
 
-Russian control rule:
-
 ```text
-Нельзя подтверждать цену, если после налогового резерва расчётная чистая прибыль отрицательная.
-```
+gross_margin_rub = final_price_rub - protected_cost_rub
 
-Formula:
+tax_reserve_rub = gross_margin_rub × tax_on_profit_percent / 100
 
-```text
-gross_margin_rub =
-final_price_rub - score_adjusted_cost_rub
-
-tax_reserve_rub =
-gross_margin_rub × tax_on_profit_percent / 100
-
-net_profit_after_tax_rub =
-gross_margin_rub - tax_reserve_rub
+net_profit_after_tax_rub = gross_margin_rub - tax_reserve_rub
 
 tax_on_profit_percent = 15
 ```
@@ -529,35 +488,9 @@ if net_profit_after_tax_rub < minimum_net_profit_rub:
     warning = after_tax_profit_below_minimum
 ```
 
-Required fields:
-
-```text
-gross_margin_rub
-tax_reserve_rub
-net_profit_after_tax_rub
-minimum_net_profit_rub
-after_tax_profit_status
-minimum_kurgin_net_profit_rub
-minimum_specialist_net_profit_rub
-```
-
-Allowed `after_tax_profit_status` values:
-
-```text
-ok
-below_minimum
-negative
-needs_review
-blocked
-```
-
 ---
 
-## 12. Minimum net profit guard
-
-Minimum net profit must be protected by both fixed and percentage logic.
-
-Formula:
+## 13. Minimum net profit guard
 
 ```text
 minimum_net_profit_required_rub =
@@ -583,11 +516,9 @@ Minimum profit guard must run after FX protection and after tax reserve calculat
 
 ---
 
-## 13. Legacy score margin modifier
+## 14. Legacy score margin modifier
 
 The earlier v0.2 draft fixed a soft dynamic margin concept.
-
-Original idea:
 
 ```text
 base_specialist_margin_percent = margin percent from cost tier
@@ -617,11 +548,11 @@ Score margin modifier may affect specialist economics only if separately approve
 Do not let both layers inflate price aggressively at the same time.
 ```
 
+For `KURGIN Score < 80`, low-score fixed specialist rule overrides dynamic specialist margin and score margin modifier.
+
 ---
 
-## 14. Universal future fields
-
-Future fields required for a more complete implementation:
+## 15. Universal future fields
 
 ```text
 air_freight_fixed_rub
@@ -636,6 +567,7 @@ pricing_run_timestamp
 contract_date
 contract_fx_rate_source
 contract_fx_rate_rub_per_invoice_currency
+specialist_client_mode_status
 ```
 
 Additional fields may be added only if they preserve:
@@ -644,16 +576,16 @@ Additional fields may be added only if they preserve:
 - FX guard;
 - after-tax guard;
 - minimum profit guard;
-- request_price vs checkout separation.
+- request_price vs checkout separation;
+- public / specialist surface separation.
 
 ---
 
-## 15. What not to do
+## 16. What not to do
 
 Do not do any of the following from this document:
 
-- write code;
-- change Pricing Engine;
+- write code without separate implementation scope;
 - confirm current calculated prices;
 - run mass confirmation;
 - publish priced catalog;
@@ -667,15 +599,14 @@ Do not do any of the following from this document:
 - bypass FX guard;
 - bypass after-tax guard;
 - bypass minimum profit guard;
+- show low-score specialist labels on ordinary public catalog;
 - treat current early Pricing Preview as final safe public price.
 
 ---
 
-## 16. MVP recommendation
+## 17. MVP recommendation
 
 Until Pricing Formula v0.2 or an approved v0.2-lite is implemented and reviewed, current calculated prices must not be treated as final public prices.
-
-Current Pricing Preview may be used only as a technical check of an early pricing layer.
 
 Recommended order:
 
@@ -691,19 +622,19 @@ Recommended order:
 9. Then public-site priced display check.
 ```
 
-No step may skip FX guard, after-tax guard or minimum net profit guard.
+No step may skip FX guard, after-tax guard, section scope guard, low-score rule or minimum net profit guard.
 
 ---
 
-## 17. Final control statement
+## 18. Final control statement
 
 Pricing Formula v0.2 defines a safer future pricing model.
 
 It does not launch commercial pricing.
 
 ```text
-No code changed by this document.
 No price confirmed by this document.
 No catalog published by this document.
 No checkout enabled by this document.
+No low-score specialist mode shown on public catalog by this document.
 ```
