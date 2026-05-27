@@ -3,7 +3,7 @@
 **Project:** KURGIN  
 **Repository:** `kka45821-del/kurgin-admin-mvp`  
 **Document:** Pricing Formula v0.2-lite Scope  
-**Status:** documentation-only scope before code implementation  
+**Status:** implementation scope / controlled preview-only pricing logic  
 **Source document:** `docs/KURGIN_PRICING_FORMULA_V0_2.md`  
 
 ---
@@ -14,7 +14,6 @@ This document defines the minimum safe implementation scope for Pricing Formula 
 
 It does **not**:
 
-- write code;
 - confirm prices;
 - run mass confirmation;
 - publish `catalog.json`;
@@ -27,20 +26,18 @@ It does **not**:
 - create client mode.
 
 ```text
-v0.2-lite scope document ≠ code implementation
 calculated price ≠ confirmed public price
 preview ≠ publication
+request_price ≠ checkout
 ```
 
 ---
 
 ## 1. Purpose of v0.2-lite
 
-Pricing Formula v0.2-lite is the minimum safe implementation of Pricing Formula v0.2 for the first controlled test.
+Pricing Formula v0.2-lite is the minimum safe implementation of Pricing Formula v0.2 for controlled admin preview.
 
-It exists to test the core economics before a full pricing system is implemented.
-
-v0.2-lite should test:
+It tests:
 
 - batch economics;
 - USD / INR / RUB purchase inputs;
@@ -51,19 +48,21 @@ v0.2-lite should test:
 - public extra;
 - FX guard;
 - after-tax guard;
+- Round/non-Round score handling;
 - three calculated prices.
 
 v0.2-lite is not a full commercial pricing workflow.
 
 ---
 
-## 2. What is included in v0.2-lite
+## 2. Inputs and controls
 
-v0.2-lite includes the following inputs and controls:
+v0.2-lite includes:
 
 ```text
 base_purchase_price_per_ct_supplier_currency
 carat
+shape
 invoice_currency
 fx_rate_rub_per_invoice_currency
 customs_percent
@@ -80,6 +79,10 @@ jeweler_fixed_margin_usd_per_ct
 jeweler_variable_margin_percent
 public_fixed_extra_rub
 public_extra_percent
+minimum_net_profit_fixed_rub
+minimum_net_profit_percent_by_tier
+low_score_jeweler_margin_rub
+low_score_public_spread_rub
 rounding_to_1000_rub
 ```
 
@@ -89,7 +92,7 @@ The implementation must keep these fields as controlled inputs, not free-form fo
 
 ## 3. Three calculated prices
 
-v0.2-lite must calculate three prices:
+v0.2-lite calculates:
 
 ```text
 calculated_specialist_purchase_price_rub
@@ -97,7 +100,7 @@ calculated_specialist_client_display_price_rub
 calculated_public_price_rub
 ```
 
-Required price hierarchy:
+Required hierarchy:
 
 ```text
 specialist_purchase_price_rub
@@ -107,19 +110,9 @@ specialist_client_display_price_rub
 public_price_rub
 ```
 
-Meaning:
-
-```text
-specialist_purchase_price_rub = price specialist pays KURGIN
-specialist_client_display_price_rub = price specialist may show client
-public_price_rub = ordinary public-site buyer price
-```
-
-In v0.2-lite, all three are calculated values until a separate selected confirmation step is performed.
-
 ---
 
-## 4. Formula v0.2-lite
+## 4. Base formula
 
 Base cost per carat:
 
@@ -135,34 +128,26 @@ Score-adjusted cost:
 
 ```text
 score_adjusted_cost_per_ct =
-base_cost_per_ct × kurgin_score_coefficient
+base_cost_per_ct × effective_kurgin_score_coefficient
 ```
 
-KURGIN net margin target:
+KURGIN margin and tax reserve:
 
 ```text
 kurgin_net_margin_target_per_ct =
 kurgin_fixed_margin_usd_per_ct
 + score_adjusted_cost_per_ct × kurgin_variable_margin_percent / 100
-```
 
-KURGIN tax reserve:
-
-```text
 kurgin_tax_reserve_per_ct =
 kurgin_net_margin_target_per_ct × tax_on_profit_percent / 100
-```
 
-Specialist purchase layer:
-
-```text
 specialist_purchase_per_ct =
 score_adjusted_cost_per_ct
 + kurgin_net_margin_target_per_ct
 + kurgin_tax_reserve_per_ct
 ```
 
-Jeweler / specialist client layer:
+Normal specialist client layer:
 
 ```text
 jeweler_margin_per_ct =
@@ -173,64 +158,71 @@ specialist_client_display_per_ct =
 specialist_purchase_per_ct + jeweler_margin_per_ct
 ```
 
-RUB calculated prices:
-
-```text
-specialist_purchase_price_rub =
-ceil_to_1000(specialist_purchase_per_ct × carat × fx_rate)
-
-specialist_client_display_price_rub =
-ceil_to_1000(specialist_client_display_per_ct × carat × fx_rate)
-```
-
-Public extra:
-
-```text
-public_extra_rub =
-max(
-  public_fixed_extra_rub,
-  specialist_client_display_price_rub × public_extra_percent / 100
-)
-```
-
-Public price:
-
-```text
-public_price_rub =
-ceil_to_1000(specialist_client_display_price_rub + public_extra_rub)
-```
-
-Control rule:
-
-```text
-KURGIN Score coefficient applies to the cost layer,
-not to the final public price.
-```
-
 ---
 
-## 5. Low-score fixed specialist rule
+## 5. Score handling rules
 
-For low-score stones in active v0.2-lite scope, ordinary dynamic jeweler / specialist margin must not apply.
-
-Rule:
+### A. Round main / large without Score
 
 ```text
-if section in ["main", "large"] and KURGIN Score < 80:
-    specialist_client_mode_status = low_score_fixed_rule
-    specialist_client_display_price_rub = specialist_purchase_price_rub + 2000
-    public_price_rub = specialist_client_display_price_rub + 2000
+if section in ["main", "large"]
+and shape = Round
+and KURGIN Score is missing:
+    price_status = blocked
+    error = round_score_required
+    score_status = round_score_required
 ```
 
-Normal formula path:
+### B. Non-Round main / large without Score
 
 ```text
-if section in ["main", "large"] and KURGIN Score >= 80:
+if section in ["main", "large"]
+and shape != Round
+and KURGIN Score is missing:
+    effective_kurgin_score_coefficient = 1.0
+    score_status = non_round_score_not_required
+    specialist_client_mode_status = normal_non_round_score_not_required
+    not blocked
+```
+
+### C. Round main / large with Score < 80
+
+```text
+if section in ["main", "large"]
+and shape = Round
+and KURGIN Score < 80:
+    specialist_client_mode_status = low_score_fixed_rule
+    specialist_client_display_price_rub = specialist_purchase_price_rub + low_score_jeweler_margin_rub
+    public_price_rub = specialist_client_display_price_rub + low_score_public_spread_rub
+```
+
+Default values:
+
+```text
+low_score_jeweler_margin_rub = 2000
+low_score_public_spread_rub = 2000
+```
+
+For `Round main/large KURGIN Score < 80`, do **not** apply:
+
+- `jeweler_fixed_margin_usd_per_ct`;
+- `jeweler_variable_margin_percent`;
+- dynamic specialist margin;
+- score margin modifier.
+
+### D. Round main / large with Score >= 80
+
+```text
+if section in ["main", "large"]
+and shape = Round
+and KURGIN Score >= 80:
     specialist_client_mode_status = normal
     use normal v0.2-lite formula
 ```
 
-Out-of-scope path:
+`KURGIN Score = 80.00` is normal path, not low-score path.
+
+### E. Out of current scope
 
 ```text
 if section not in ["main", "large"]:
@@ -238,31 +230,11 @@ if section not in ["main", "large"]:
     error_or_warning = section_outside_v02_lite_scope
 ```
 
-For `KURGIN Score < 80`, do **not** apply:
-
-- `jeweler_fixed_margin_usd_per_ct`;
-- `jeweler_variable_margin_percent`;
-- dynamic specialist margin;
-- score margin modifier.
-
-Public catalog restriction:
-
-The ordinary public catalog must not show:
-
-- `low_score_fixed_rule`;
-- specialist margin;
-- specialist client display price;
-- specialist purchase price.
-
-This information is for future specialist cabinet / professional mode only.
-
 ---
 
-## 6. Batch expenses in v0.2-lite
+## 6. Batch expenses
 
-Batch fixed expenses must use value-share allocation.
-
-Formula:
+Batch fixed expenses use value-share allocation:
 
 ```text
 stone_share =
@@ -272,33 +244,20 @@ allocated_batch_expense_rub =
 batch_fixed_expenses_rub × stone_share
 ```
 
-Required allocation method:
+Currency guard:
 
 ```text
-batch_expense_allocation_method = value_share
+if batch_total_supplier_currency > 0
+and batch_total_currency != invoice_currency:
+    price_status = blocked
+    error = batch_currency_mismatch
 ```
-
-Limitation for v0.2-lite:
-
-```text
-If the first code package calculates batch fixed expenses separately from the per-carat formula,
-this must be explicitly shown in preview output.
-```
-
-The preview must not hide whether batch expenses were included in:
-
-- cost layer;
-- separate allocated cost;
-- guard calculations;
-- final calculated public price.
 
 ---
 
-## 7. Guards in v0.2-lite
+## 7. Guards
 
-v0.2-lite must include mandatory guards.
-
-### A. FX no-loss guard
+FX guard:
 
 ```text
 if final_price_rub < fx_protected_purchase_cost_rub:
@@ -306,7 +265,7 @@ if final_price_rub < fx_protected_purchase_cost_rub:
     error = below_fx_protected_purchase_cost
 ```
 
-### B. After-tax no-loss guard
+After-tax guard:
 
 ```text
 if net_profit_after_tax_rub <= 0:
@@ -314,7 +273,7 @@ if net_profit_after_tax_rub <= 0:
     error = after_tax_profit_negative
 ```
 
-### C. Minimum net profit guard
+Minimum profit guard:
 
 ```text
 if net_profit_after_tax_rub < minimum_net_profit_required_rub:
@@ -322,7 +281,7 @@ if net_profit_after_tax_rub < minimum_net_profit_required_rub:
     warning = after_tax_profit_below_minimum
 ```
 
-### D. Price hierarchy guard
+Price hierarchy guard:
 
 ```text
 if not specialist_purchase < specialist_client_display < public:
@@ -330,21 +289,51 @@ if not specialist_purchase < specialist_client_display < public:
     error = price_hierarchy_invalid
 ```
 
-### E. Section scope guard
+---
+
+## 8. Output fields
+
+v0.2-lite result must expose:
 
 ```text
-if section not in ["main", "large"]:
-    price_status = blocked / needs_review
-    error_or_warning = section_outside_v02_lite_scope
+calculated_specialist_purchase_price_rub
+calculated_specialist_client_display_price_rub
+calculated_public_price_rub
+base_cost_per_ct
+score_adjusted_cost_per_ct
+allocated_batch_expense_rub
+batch_expense_included_in_final_price
+kurgin_tax_reserve_per_ct
+net_profit_after_tax_rub
+minimum_net_profit_required_rub
+price_status
+warnings
+errors
+formula_version
+specialist_client_mode_status
+low_score_jeweler_margin_rub
+low_score_public_spread_rub
+effective_kurgin_score_coefficient
+score_status
 ```
-
-All guards must run before selected confirmation.
-
-No confirmed public price may bypass these guards.
 
 ---
 
-## 8. What is not included in v0.2-lite
+## 9. Public catalog restrictions
+
+The ordinary public catalog must not show:
+
+- `low_score_fixed_rule`;
+- specialist margin;
+- specialist client display price;
+- specialist purchase price;
+- specialist_client_mode_status.
+
+This information is for future specialist cabinet / professional mode only.
+
+---
+
+## 10. What is not included
 
 v0.2-lite does not include:
 
@@ -362,114 +351,14 @@ v0.2-lite does not include:
 - full actual_paid_rub reconciliation;
 - manual override.
 
-Manual override is excluded from v0.2-lite because it can bypass the purpose of the first controlled test.
-
 ---
 
-## 9. What may be confirmed after v0.2-lite
-
-For the first controlled test, do **not** confirm all three prices as public prices.
-
-After selected confirmation, only the public price fields may be written:
+## 11. Final control statement
 
 ```text
-confirmed_public_price_rub = calculated_public_price_rub
-price_rub = calculated_public_price_rub
-price_confirmed = True
-price_status = confirmed
-formula_version = pricing_formula_v0_2_lite
-pricing_run_timestamp
-```
-
-Specialist prices must remain calculated-only until roles and specialist cabinet exist.
-
-Do not write specialist price fields into public buyer display.
-
----
-
-## 10. What must not be done
-
-Do not:
-
-- confirm `pending_invoice_same_shipment` stones;
-- write `specialist_purchase_price_rub` as public price;
-- show `specialist_client_display_price_rub` on the public site;
-- show `low_score_fixed_rule` on the public site;
-- enable checkout;
-- enable reserve;
-- publish priced catalog without guard status `ok`;
-- bypass FX guard;
-- bypass after-tax guard;
-- bypass minimum profit guard;
-- treat calculated preview as commercial approval.
-
----
-
-## 11. Future code micro-packages after this document
-
-Implementation must be split into small packages.
-
-### A. Pure formula module
-
-```text
-admin_pricing_formula_v02_lite.py
-```
-
-Purpose:
-
-- deterministic formula functions;
-- no Streamlit UI;
-- no file writes;
-- no catalog publication;
-- no confirmation;
-- no checkout.
-
-### B. Preview UI
-
-```text
-admin_pricing.py shows v0.2-lite preview
-```
-
-Purpose:
-
-- show calculated values;
-- show guards;
-- show blocked / needs_review / ok statuses;
-- show price hierarchy;
-- show after-tax result;
-- no confirmation yet unless separately approved.
-
-### C. Selected confirmation
-
-```text
-selected confirmation for public price rows only
-```
-
-Purpose:
-
-- confirm only selected rows;
-- write only public confirmed price fields;
-- require guard status ok;
-- write audit log;
-- no specialist pricing publication;
-- no checkout enablement.
-
----
-
-## 12. Final control statement
-
-Pricing Formula v0.2-lite is a controlled bridge between documentation and code.
-
-```text
-Full v0.2 is too large for one code package.
-v0.2-lite is the first safe testable subset.
-```
-
-This document allows future implementation planning only.
-
-```text
-No code changed by this document.
 No price confirmed by this document.
 No catalog published by this document.
 No public site changed by this document.
+No checkout enabled by this document.
+No role / specialist cabinet / client mode launched by this document.
 ```
