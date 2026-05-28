@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -12,8 +14,15 @@ from admin_pricing_template import PRICE_TABLE_TEMPLATE_COLUMNS, PRICE_TEMPLATE_
 
 
 PRICE_TABLE_PATH = Path("data") / "price_table.csv"
+PUBLIC_INDEX_PATH = Path("data") / "public_index.json"
 PRICE_TABLE_SESSION_KEY = "admin_price_table_uploaded_preview"
 ROW_ID_COLUMN = "_row_id"
+
+
+PUBLIC_INDEX_DISCLAIMER = (
+    "Index is an indicative benchmark. It is not an offer, not a final stone price, "
+    "not a financial index and not an investment recommendation."
+)
 
 
 def default_price_table_frame() -> pd.DataFrame:
@@ -77,6 +86,59 @@ def price_table_to_excel_bytes(table: pd.DataFrame) -> bytes:
         normalize_price_table(table).to_excel(writer, index=False, sheet_name="KURGIN_Price_Table")
     output.seek(0)
     return output.getvalue()
+
+
+def build_public_index_snapshot(price_table: pd.DataFrame) -> dict[str, Any]:
+    """Build safe public index snapshot from admin index / price table.
+
+    Public snapshot intentionally excludes supplier data, margins, taxes,
+    formula settings, stone prices, checkout and confirmation fields.
+    """
+    normalized = normalize_price_table(price_table)
+    valid_band = normalized["carat_band_to"] > normalized["carat_band_from"]
+    public_rows = normalized[
+        normalized["is_active"]
+        & normalized["base_price_usd_per_carat"].gt(0)
+        & normalized["color"].astype(str).str.strip().ne("")
+        & normalized["clarity"].astype(str).str.strip().ne("")
+        & valid_band
+    ].copy()
+
+    public_rows = public_rows.sort_values(["color", "clarity", "carat_band_from", "carat_band_to"])
+    rows: list[dict[str, Any]] = []
+    for row in public_rows.itertuples(index=False):
+        rows.append(
+            {
+                "carat_band_from": float(row.carat_band_from),
+                "carat_band_to": float(row.carat_band_to),
+                "color": str(row.color),
+                "clarity": str(row.clarity),
+                "index_value_usd_per_ct": int(float(row.base_price_usd_per_carat)),
+                "status": "active",
+            }
+        )
+
+    return {
+        "source": "KURGIN Admin Index / Price Table",
+        "version": "public_index_v0_1",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "currency": "USD",
+        "unit": "per_carat",
+        "disclaimer": PUBLIC_INDEX_DISCLAIMER,
+        "rows_count": len(rows),
+        "rows": rows,
+    }
+
+
+def public_index_snapshot_to_json_bytes(snapshot: dict[str, Any]) -> bytes:
+    return json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+
+
+def save_public_index_snapshot(price_table: pd.DataFrame) -> dict[str, Any]:
+    snapshot = build_public_index_snapshot(price_table)
+    PUBLIC_INDEX_PATH.parent.mkdir(exist_ok=True)
+    PUBLIC_INDEX_PATH.write_bytes(public_index_snapshot_to_json_bytes(snapshot))
+    return snapshot
 
 
 def price_table_summary(table: pd.DataFrame) -> dict[str, Any]:
@@ -210,6 +272,23 @@ def render_admin_price_table() -> pd.DataFrame:
         save_draft_price_table(merged_table)
         st.success("Edited index table draft сохранена в data/price_table.csv. Цены не подтверждены; catalog.json не опубликован.")
         current_table = load_saved_price_table()
+
+    st.markdown("#### Public index snapshot")
+    st.warning("public_index.json не является catalog.json. Он не подтверждает цены, не публикует каталог и не включает checkout.")
+    snapshot_preview = build_public_index_snapshot(current_table)
+    st.caption(f"Safe public index rows: {snapshot_preview['rows_count']}. Base price = 0, inactive rows and invalid bands are excluded.")
+    col_export, col_download = st.columns(2)
+    with col_export:
+        if st.button("Export public index snapshot", type="secondary"):
+            exported = save_public_index_snapshot(current_table)
+            st.success(f"public_index.json сохранён в data/public_index.json. Rows: {exported['rows_count']}. catalog.json не опубликован.")
+    with col_download:
+        st.download_button(
+            label="Скачать public_index.json",
+            data=public_index_snapshot_to_json_bytes(snapshot_preview),
+            file_name="public_index.json",
+            mime="application/json",
+        )
 
     st.download_button(
         label="Скачать текущую admin index / price table Excel",
