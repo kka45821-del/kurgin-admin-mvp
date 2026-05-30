@@ -26,6 +26,6 @@ def render_product_publish():
     render_publish_tab()
     st.caption("Кнопка Далее переводит к списку партий. Она не утверждает, что публикация уже выполнена.")
     if st.button("Далее", key="product_publish_next_to_batches"):
-        st.session_state["product_management_menu"] = "Загруженные партии"
+        st.session_state["product_management_next_menu"] = "Загруженные партии"
         st.session_state["product_management_view"] = "main"
         st.rerun()
