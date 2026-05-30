@@ -17,12 +17,13 @@ st.set_page_config(page_title="KURGIN Admin MVP", page_icon="◇", layout="wide"
 
 BADGE_STYLE = {ACTIVE: "#0f7b0f", STUB: "#8a6d00", FUTURE: "#666666", RESTRICTED: "#9b1c1c"}
 PRODUCT_MENU = [
-    "Все камни на сайте",
     "Загрузка",
     "Установить цену",
     "Опубликовать",
     "Загруженные партии",
+    "Редактирование",
     "Состояние",
+    "Все камни",
 ]
 
 
@@ -71,6 +72,14 @@ def bool_series(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower().isin(["true", "1", "yes", "y", "да"])
 
 
+def ensure_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    result = df.copy()
+    for col in columns:
+        if col not in result.columns:
+            result[col] = ""
+    return result
+
+
 def render_dashboard():
     stones = load_stones()
     public = public_preview(stones)
@@ -112,11 +121,11 @@ def product_public_table() -> pd.DataFrame:
     result = public.copy()
     result["KURGIN Score"] = result.get("karo_score", "")
     if "public_action" in result.columns:
-        result["public_status"] = result["public_action"].astype(str)
+        result["public status"] = result["public_action"].astype(str)
     elif "public_sellable" in result.columns:
-        result["public_status"] = result["public_sellable"].map({True: "ready_for_checkout", False: "request_price"})
+        result["public status"] = result["public_sellable"].map({True: "ready_for_checkout", False: "request_price"})
     else:
-        result["public_status"] = "ready_for_publish"
+        result["public status"] = "ready_for_publish"
 
     columns = [
         "stone_id",
@@ -130,22 +139,58 @@ def product_public_table() -> pd.DataFrame:
         "KURGIN Score",
         "section",
         "price_status",
-        "public_status",
+        "price_rub",
+        "show_in_catalog",
+        "current_status",
+        "public status",
     ]
-    for col in columns:
-        if col not in result.columns:
-            result[col] = ""
+    result = ensure_columns(result, columns)
     return result[columns]
 
 
 def render_product_all_stones():
-    st.markdown("### Все камни на сайте")
-    st.caption("Камни, которые проходят текущий public preview / готовы к публикации по действующим правилам MVP.")
-    table = product_public_table()
-    if table.empty:
-        st.info("Нет камней, проходящих текущий public preview.")
+    st.markdown("### Все камни")
+    st.caption("Общий Excel-like view всех камней. Массовое опасное редактирование на этом этапе не включено.")
+    stones = load_stones()
+    if stones.empty:
+        st.info("Камней пока нет.")
         return
-    st.dataframe(table, use_container_width=True)
+
+    result = stones.copy()
+    result["KURGIN Score"] = result.get("karo_score", "")
+    public = public_preview(stones)
+    public_ids = set(public["stone_id"].astype(str)) if not public.empty and "stone_id" in public.columns else set()
+    result["public status"] = result.get("stone_id", pd.Series("", index=result.index)).astype(str).map(
+        lambda value: "public_preview" if value in public_ids else "not_public"
+    )
+
+    tag_cols = [col for col in result.columns if str(col).lower().startswith("tag")]
+    columns = [
+        "stone_id",
+        "batch_number",
+        "supplier_name",
+        "upload_date",
+        "title",
+        "shape",
+        "carat",
+        "color",
+        "clarity",
+        "lab",
+        "report_number",
+        "section",
+        "KURGIN Score",
+        "karo_score",
+        "price_rub",
+        "price_status",
+        "price_source",
+        "дата загрузки",
+        "public status",
+        "current_status",
+    ] + tag_cols
+    if "upload_date" in result.columns:
+        result["дата загрузки"] = result["upload_date"]
+    result = ensure_columns(result, columns)
+    st.dataframe(result[columns], use_container_width=True)
 
 
 def render_product_upload():
@@ -173,6 +218,9 @@ def render_product_pricing_placeholder():
     df["price_missing"] = price.le(0)
     df["needs_review"] = df["price_missing"] | price_status.isin(["", "missing", "needs_review", "index_pending", "index_suggested"])
     df["ready_for_publish"] = price.gt(0) & price_confirmed & availability_confirmed
+    df["цена на сайте"] = price
+    df["цена в режиме клиента"] = "not available"
+    df["цена для ювелира"] = "not available"
 
     view_cols = [
         "stone_id",
@@ -184,14 +232,15 @@ def render_product_pricing_placeholder():
         "lab",
         "report_number",
         "price_rub",
+        "цена на сайте",
+        "цена в режиме клиента",
+        "цена для ювелира",
         "price_status",
         "price_missing",
         "needs_review",
         "ready_for_publish",
     ]
-    for col in view_cols:
-        if col not in df.columns:
-            df[col] = ""
+    df = ensure_columns(df, view_cols)
     st.dataframe(df[df["price_missing"] | df["needs_review"]][view_cols], use_container_width=True)
 
 
@@ -233,25 +282,99 @@ def render_product_batches():
     result["batch_number"] = result["batch_number"].astype(str)
     result = result.merge(counts, on="batch_number", how="left")
     result["количество камней всего"] = result["количество камней всего"].fillna(result.get("stones_count", 0)).astype(int)
-    result["статус"] = result.get("upload_confirmed", "").astype(str).map(lambda value: "uploaded" if value.lower() in ["true", "1", "yes", "да"] else "draft")
+    if "upload_confirmed" in result.columns:
+        result["статус"] = result["upload_confirmed"].astype(str).map(lambda value: "uploaded" if value.lower() in ["true", "1", "yes", "да"] else "draft")
+    else:
+        result["статус"] = "not available"
     result = result.rename(columns={"upload_date": "дата", "supplier_name": "имя поставщика", "notes": "комментарий"})
 
-    cols = ["дата", "имя поставщика", "комментарий", "количество камней всего", "batch_number", "статус"]
-    for col in cols:
-        if col not in result.columns:
-            result[col] = ""
+    cols = ["batch_number", "дата", "имя поставщика", "комментарий", "количество камней всего", "статус"]
+    result = ensure_columns(result, cols)
     st.dataframe(result[cols], use_container_width=True)
 
 
-def render_product_state():
-    st.markdown("### Состояние")
-    st.caption("sold / reserve / cart / favorites пока future-safe placeholders и не являются активной коммерческой логикой.")
+def render_product_edit_placeholder():
+    st.markdown("### Редактирование")
+    st.info("Здесь позже будет безопасное редактирование камней, партий и статусов.")
+    st.write("- массовое опасное редактирование не включено;")
+    st.write("- удаление, rollback и автоматическое изменение данных не добавлены;")
+    st.write("- любые изменения данных требуют отдельного задания и проверки.")
 
+
+def batch_metadata(batch_number: str, batches: pd.DataFrame) -> dict:
+    if batches.empty or "batch_number" not in batches.columns:
+        return {}
+    rows = batches[batches["batch_number"].astype(str).eq(str(batch_number))]
+    if rows.empty:
+        return {}
+    return rows.iloc[0].to_dict()
+
+
+def detail_table(df: pd.DataFrame, date_column_name: str) -> pd.DataFrame:
+    columns = {
+        "batch_number": "номер партии",
+        "upload_date": date_column_name,
+        "report_number": "номер сертификата",
+        "shape": "огранка",
+        "carat": "карат",
+        "color": "цвет",
+        "clarity": "чистота",
+    }
+    if df.empty:
+        return pd.DataFrame(columns=list(columns.values()))
+    result = ensure_columns(df, list(columns.keys()))
+    return result[list(columns.keys())].rename(columns=columns)
+
+
+def render_product_batch_detail(batch_number: str):
+    stones = load_stones()
+    batches = load_batches()
+    meta = batch_metadata(batch_number, batches)
+
+    if st.button("← Назад к состоянию"):
+        st.session_state["product_management_view"] = "state"
+        st.session_state["product_management_menu"] = "Состояние"
+        st.rerun()
+
+    st.markdown(f"### Партия {batch_number}")
+    st.caption(
+        f"Дата: {meta.get('upload_date', 'not available')} · "
+        f"Поставщик: {meta.get('supplier_name', 'not available')} · "
+        f"Комментарий: {meta.get('notes', 'not available')}"
+    )
+
+    if stones.empty or "batch_number" not in stones.columns:
+        batch_stones = pd.DataFrame()
+    else:
+        batch_stones = stones[stones["batch_number"].astype(str).eq(str(batch_number))].copy()
+
+    if not batch_stones.empty and "current_status" in batch_stones.columns:
+        status = batch_stones["current_status"].astype(str).str.lower()
+        on_site = batch_stones[~status.isin(["sold", "removed", "unavailable", "hidden"])]
+        sold = batch_stones[status.eq("sold")]
+        removed = batch_stones[status.isin(["removed", "unavailable", "hidden"])]
+    else:
+        on_site = batch_stones
+        sold = pd.DataFrame()
+        removed = pd.DataFrame()
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("#### Камни на сайте / продаются ещё")
+        st.dataframe(detail_table(on_site, "дата загрузки на сайт"), use_container_width=True)
+    with col2:
+        st.markdown("#### Проданные камни")
+        st.dataframe(detail_table(sold, "дата продажи"), use_container_width=True)
+    with col3:
+        st.markdown("#### Сняты с продажи")
+        st.dataframe(detail_table(removed, "дата снятия с продажи"), use_container_width=True)
+
+
+def product_state_rows() -> tuple[pd.DataFrame, pd.DataFrame]:
     stones = load_stones()
     batches = load_batches()
     if stones.empty:
-        st.info("Камней пока нет.")
-        return
+        return pd.DataFrame(), pd.DataFrame()
 
     work = stones.copy()
     if "batch_number" not in work.columns:
@@ -302,14 +425,51 @@ def render_product_state():
         "количество в корзине",
         "batch_number",
     ]
-    for col in cols:
-        if col not in result.columns:
-            result[col] = ""
-    st.dataframe(result[cols], use_container_width=True)
+    result = ensure_columns(result, cols)
+    return result[cols], work
 
-    selected = st.selectbox("Подробнее по партии", result["batch_number"].astype(str).tolist())
-    if st.button("Подробнее"):
-        st.dataframe(work[work["batch_number"].astype(str).eq(selected)], use_container_width=True)
+
+def render_product_state():
+    st.markdown("### Состояние")
+    st.caption("sold / reserve / cart / favorites пока future-safe placeholders и не являются активной коммерческой логикой.")
+
+    result, _ = product_state_rows()
+    if result.empty:
+        st.info("Камней пока нет.")
+        return
+
+    header = st.columns([1, 1, 2, 1, 1, 1, 1, 1, 1, 1])
+    labels = [
+        "дата",
+        "имя поставщика",
+        "комментарий",
+        "всего",
+        "на сайте",
+        "продано",
+        "избранное",
+        "бронь",
+        "корзина",
+        "",
+    ]
+    for col, label in zip(header, labels):
+        col.markdown(f"**{label}**")
+
+    for _, row in result.iterrows():
+        cols = st.columns([1, 1, 2, 1, 1, 1, 1, 1, 1, 1])
+        cols[0].write(row.get("дата", ""))
+        cols[1].write(row.get("имя поставщика", ""))
+        cols[2].write(row.get("комментарий", ""))
+        cols[3].write(row.get("количество камней всего", 0))
+        cols[4].write(row.get("количество на сайте", 0))
+        cols[5].write(row.get("количество проданных", 0))
+        cols[6].write(row.get("количество в избранных", 0))
+        cols[7].write(row.get("количество забронированных", 0))
+        cols[8].write(row.get("количество в корзине", 0))
+        batch_number = str(row.get("batch_number", ""))
+        if cols[9].button("Подробнее", key=f"batch_detail_{batch_number}"):
+            st.session_state["product_management_view"] = "batch_detail"
+            st.session_state["product_detail_batch"] = batch_number
+            st.rerun()
 
 
 def render_product_management_page():
@@ -317,19 +477,23 @@ def render_product_management_page():
     with left_title:
         if st.button("← Назад", use_container_width=True):
             st.session_state["admin_return_dashboard"] = True
+            st.session_state["product_management_view"] = "main"
             st.rerun()
     with right_title:
         st.subheader("Управление товаром")
         st.caption("Отдельная рабочая зона: камни, загрузка, цена, публикация, партии и состояние.")
 
     st.divider()
+
+    if st.session_state.get("product_management_view") == "batch_detail":
+        render_product_batch_detail(st.session_state.get("product_detail_batch", ""))
+        return
+
     menu_col, content_col = st.columns([1, 4])
     with menu_col:
         selected = st.radio("Меню", PRODUCT_MENU, key="product_management_menu", label_visibility="collapsed")
     with content_col:
-        if selected == "Все камни на сайте":
-            render_product_all_stones()
-        elif selected == "Загрузка":
+        if selected == "Загрузка":
             render_product_upload()
         elif selected == "Установить цену":
             render_product_pricing_placeholder()
@@ -337,8 +501,12 @@ def render_product_management_page():
             render_product_publish()
         elif selected == "Загруженные партии":
             render_product_batches()
+        elif selected == "Редактирование":
+            render_product_edit_placeholder()
         elif selected == "Состояние":
             render_product_state()
+        elif selected == "Все камни":
+            render_product_all_stones()
 
 
 def render_catalog_page(item: dict | None):
