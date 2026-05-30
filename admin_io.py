@@ -7,6 +7,7 @@ DATA = Path('data')
 DATA.mkdir(exist_ok=True)
 STONES = DATA / 'stones.csv'
 BATCHES = DATA / 'upload_batches.csv'
+BATCH_PAYMENTS = DATA / 'batch_payments.csv'
 
 TAG_COLS = ['tag1', 'tag2', 'tag3', 'tag4', 'tag5', 'tag6']
 BASE_COLS = ['stone_id', 'title', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number', 'price_rub', 'karo_score']
@@ -19,7 +20,11 @@ PRICE_COLS = [
 ]
 STATE_COLS = ['current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
 STONE_COLS = BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS + STATE_COLS
-BATCH_COLS = ['batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes']
+BATCH_COLS = [
+    'batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes',
+    'purchase_total_rub', 'purchase_advance_rub', 'purchase_debt_rub',
+]
+PAYMENT_COLS = ['batch_number', 'payment_date', 'amount_rub', 'note', 'created_at']
 
 ALIASES = {
     'stone_id': ['stone_id', 'stone id', 'id', 'sku', 'stock', 'stock #', 'stock id', 'lot', 'lot no', 'lot number', 'sr no', 'no'],
@@ -70,6 +75,8 @@ ALIASES = {
 
 TEXT_COLS = ['stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price', 'pricing_run_timestamp', *TAG_COLS, 'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
 NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub', 'manual_usd_rub_rate', 'global_price_adjustment_percent']
+BATCH_NUMBER_COLS = ['stones_count', 'purchase_total_rub', 'purchase_advance_rub', 'purchase_debt_rub']
+PAYMENT_NUMBER_COLS = ['amount_rub']
 
 
 def key_name(value) -> str:
@@ -86,12 +93,24 @@ def load_table(path: Path, columns: list[str]) -> pd.DataFrame:
     for col in columns:
         if col not in df.columns:
             df[col] = ''
-    return df[columns]
+    result = df[columns].copy()
+    if path == BATCHES:
+        for col in BATCH_NUMBER_COLS:
+            result[col] = pd.to_numeric(result[col], errors='coerce').fillna(0)
+    if path == BATCH_PAYMENTS:
+        for col in PAYMENT_NUMBER_COLS:
+            result[col] = pd.to_numeric(result[col], errors='coerce').fillna(0)
+    return result
 
 
 def save_table(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(exist_ok=True)
-    columns = STONE_COLS if path == STONES else BATCH_COLS
+    if path == STONES:
+        columns = STONE_COLS
+    elif path == BATCH_PAYMENTS:
+        columns = PAYMENT_COLS
+    else:
+        columns = BATCH_COLS
     for col in columns:
         if col not in df.columns:
             df[col] = ''
@@ -112,6 +131,26 @@ def load_batches() -> pd.DataFrame:
 
 def save_batches(df: pd.DataFrame) -> None:
     save_table(df, BATCHES)
+
+
+def load_batch_payments() -> pd.DataFrame:
+    return load_table(BATCH_PAYMENTS, PAYMENT_COLS)
+
+
+def save_batch_payments(df: pd.DataFrame) -> None:
+    save_table(df, BATCH_PAYMENTS)
+
+
+def add_batch_payment(batch_number: str, payment_date, amount_rub: float, note: str, created_at: str) -> None:
+    payments = load_batch_payments()
+    row = pd.DataFrame([{
+        'batch_number': str(batch_number),
+        'payment_date': str(payment_date),
+        'amount_rub': float(amount_rub or 0),
+        'note': note or '',
+        'created_at': str(created_at),
+    }])
+    save_batch_payments(pd.concat([payments, row], ignore_index=True))
 
 
 def next_batch_number() -> str:
@@ -212,13 +251,25 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
 
     empty_title = out['title'].astype(str).str.strip().isin(['', 'nan', 'None', 'none'])
     if empty_title.any():
-        out.loc[empty_title, 'title'] = out.loc[empty_title, 'shape'].astype(str) + ' ' + out.loc[empty_title, 'carat'].astype(str) + ' ' + out.loc[empty_title, 'color'].astype(str) + ' ' + out.loc[empty_title, 'clarity'].astype(str)
+        out.loc[empty_title, 'title'] = out.loc[empty_title, 'shape'].astype(str) + ' ' + out.loc[empty_title, 'carat'].astype(str) + ' ' + out.loc[empty_title, 'color'].astype(str) + '/' + out.loc[empty_title, 'clarity'].astype(str)
+
     return out[STONE_COLS]
 
 
-def upsert_batch_log(batch_number: str, upload_date, supplier_name: str, stones_count: int, notes: str) -> None:
+def upsert_batch_log(
+    batch_number: str,
+    upload_date,
+    supplier_name: str,
+    stones_count: int,
+    notes: str,
+    purchase_total_rub: float = 0,
+    purchase_advance_rub: float = 0,
+) -> None:
     log = load_batches()
     log = log[~log['batch_number'].astype(str).eq(str(batch_number))]
+    total = float(purchase_total_rub or 0)
+    advance = float(purchase_advance_rub or 0)
+    debt = total - advance
     row = pd.DataFrame([{
         'batch_number': str(batch_number),
         'upload_date': str(upload_date),
@@ -226,6 +277,9 @@ def upsert_batch_log(batch_number: str, upload_date, supplier_name: str, stones_
         'stones_count': int(stones_count),
         'upload_confirmed': True,
         'notes': notes,
+        'purchase_total_rub': total,
+        'purchase_advance_rub': advance,
+        'purchase_debt_rub': debt,
     }])
     save_batches(pd.concat([log, row], ignore_index=True))
 
