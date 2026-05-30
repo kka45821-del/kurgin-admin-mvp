@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
@@ -90,6 +91,19 @@ def rub(value) -> str:
     return f"{amount:,.0f} ₽".replace(",", " ")
 
 
+def excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+    out = BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        for sheet_name, df in sheets.items():
+            safe_name = str(sheet_name)[:31] or "Sheet"
+            df.to_excel(writer, sheet_name=safe_name, index=False)
+    return out.getvalue()
+
+
+def safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(value))[:80]
+
+
 def batch_metadata(batch_number: str, batches: pd.DataFrame) -> dict:
     if batches.empty or "batch_number" not in batches.columns:
         return {}
@@ -99,11 +113,15 @@ def batch_metadata(batch_number: str, batches: pd.DataFrame) -> dict:
     return rows.iloc[0].to_dict()
 
 
-def batch_payment_sum(batch_number: str) -> float:
+def batch_payment_rows(batch_number: str) -> pd.DataFrame:
     payments = load_batch_payments()
     if payments.empty or "batch_number" not in payments.columns:
-        return 0.0
-    rows = payments[payments["batch_number"].astype(str).eq(str(batch_number))]
+        return pd.DataFrame(columns=["batch_number", "payment_date", "amount_rub", "note", "created_at"])
+    return payments[payments["batch_number"].astype(str).eq(str(batch_number))].copy()
+
+
+def batch_payment_sum(batch_number: str) -> float:
+    rows = batch_payment_rows(batch_number)
     if rows.empty:
         return 0.0
     return float(pd.to_numeric(rows["amount_rub"], errors="coerce").fillna(0).sum())
@@ -192,6 +210,9 @@ def render_product_all_stones():
     result["public_status"] = result.get("stone_id", pd.Series("", index=result.index)).astype(str).map(
         lambda value: "public_preview" if value in public_ids else "not_public"
     )
+    result["site_price_rub"] = result.get("price_rub", "")
+    result["client_mode_price_rub"] = "not available"
+    result["jeweler_price_rub"] = "not available"
 
     tag_cols = [col for col in result.columns if str(col).lower().startswith("tag")]
     columns = [
@@ -208,10 +229,10 @@ def render_product_all_stones():
         "report_number",
         "section",
         "KURGIN Score",
-        "karo_score",
-        "price_rub",
+        "site_price_rub",
+        "client_mode_price_rub",
+        "jeweler_price_rub",
         "price_status",
-        "price_source",
         "current_status",
         "public_status",
     ] + tag_cols
@@ -327,6 +348,28 @@ def render_product_publish():
         st.rerun()
 
 
+def batch_stones(batch_number: str) -> pd.DataFrame:
+    stones = load_stones()
+    if stones.empty or "batch_number" not in stones.columns:
+        return pd.DataFrame()
+    return stones[stones["batch_number"].astype(str).eq(str(batch_number))].copy()
+
+
+def batch_report_parts(batch_number: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    batch_df = batch_stones(batch_number)
+    payments = batch_payment_rows(batch_number)
+    if not batch_df.empty and "current_status" in batch_df.columns:
+        status = batch_df["current_status"].astype(str).str.lower()
+        on_site = batch_df[~status.isin(["sold", "removed", "removed_from_sale", "unavailable", "hidden"])]
+        sold = batch_df[status.eq("sold")]
+        removed = batch_df[status.isin(["removed", "removed_from_sale", "unavailable", "hidden"])]
+    else:
+        on_site = batch_df
+        sold = pd.DataFrame()
+        removed = pd.DataFrame()
+    return on_site, sold, removed, payments
+
+
 def render_product_batches():
     st.markdown("### Загруженные партии")
     batches = load_batches()
@@ -363,6 +406,35 @@ def render_product_batches():
     result = ensure_columns(result, cols)
     st.dataframe(result[cols], use_container_width=True)
 
+    st.markdown("#### Действия по партиям")
+    for _, row in result.iterrows():
+        batch_number = str(row.get("batch_number", ""))
+        if not batch_number:
+            continue
+        with st.expander(f"Партия {batch_number}", expanded=False):
+            st.dataframe(pd.DataFrame([row])[cols], use_container_width=True)
+            on_site, sold, removed, payments = batch_report_parts(batch_number)
+            report = excel_bytes(
+                {
+                    "Камни на сайте": detail_table(on_site, "дата загрузки на сайт"),
+                    "Проданные камни": detail_table(sold, "дата продажи"),
+                    "Сняты с продажи": detail_table(removed, "дата снятия с продажи"),
+                    "Оплаты поставщику": payments,
+                }
+            )
+            a, b = st.columns(2)
+            a.download_button(
+                "Скачать Excel",
+                data=report,
+                file_name=f"KURGIN_batch_{safe_name(batch_number)}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"batch_download_{batch_number}",
+            )
+            if b.button("Подробнее", key=f"batches_detail_{batch_number}"):
+                st.session_state["product_management_view"] = "batch_detail"
+                st.session_state["product_detail_batch"] = batch_number
+                st.rerun()
+
 
 def render_product_edit_placeholder():
     st.markdown("### Редактирование")
@@ -388,10 +460,19 @@ def detail_table(df: pd.DataFrame, date_column_name: str) -> pd.DataFrame:
     return result[list(columns.keys())].rename(columns=columns)
 
 
+def render_table_download(label: str, df: pd.DataFrame, batch_number: str, suffix: str):
+    st.download_button(
+        label,
+        data=excel_bytes({suffix: df}),
+        file_name=f"KURGIN_{safe_name(batch_number)}_{safe_name(suffix)}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"download_{suffix}_{batch_number}",
+    )
+
+
 def render_batch_finance(batch_number: str, meta: dict):
-    payments = load_batch_payments()
-    batch_payments = payments[payments["batch_number"].astype(str).eq(str(batch_number))].copy() if not payments.empty else pd.DataFrame()
-    paid_extra = float(pd.to_numeric(batch_payments["amount_rub"], errors="coerce").fillna(0).sum()) if not batch_payments.empty else 0.0
+    payments = batch_payment_rows(batch_number)
+    paid_extra = float(pd.to_numeric(payments["amount_rub"], errors="coerce").fillna(0).sum()) if not payments.empty else 0.0
     total = float(meta.get("purchase_total_rub", 0) or 0)
     advance = float(meta.get("purchase_advance_rub", 0) or 0)
     remaining = total - advance - paid_extra
@@ -404,10 +485,10 @@ def render_batch_finance(batch_number: str, meta: dict):
     f4.metric("Остаток", rub(remaining))
 
     st.markdown("#### Оплаты")
-    if batch_payments.empty:
+    if payments.empty:
         st.info("Дополнительных оплат пока нет.")
     else:
-        st.dataframe(batch_payments, use_container_width=True)
+        st.dataframe(payments, use_container_width=True)
 
     with st.expander("Добавить оплату", expanded=False):
         st.caption("Внутренняя оплата поставщику. Это не клиентская оплата, не checkout и не payment session.")
@@ -427,7 +508,7 @@ def render_batch_finance(batch_number: str, meta: dict):
             st.rerun()
 
 
-def render_soft_remove(batch_number: str, batch_stones: pd.DataFrame):
+def render_soft_remove(batch_number: str):
     st.markdown("#### Снять партию с продажи")
     st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
     confirm = st.checkbox("Подтверждаю снятие партии с продажи", key=f"remove_confirm_{batch_number}")
@@ -436,25 +517,27 @@ def render_soft_remove(batch_number: str, batch_stones: pd.DataFrame):
         if stones.empty or "batch_number" not in stones.columns:
             st.error("Камни партии не найдены.")
             return
-        mask = stones["batch_number"].astype(str).eq(str(batch_number))
-        affected = int(mask.sum())
-        stones.loc[mask, "show_in_catalog"] = False
-        stones.loc[mask, "is_mvp_eligible"] = False
-        stones.loc[mask, "current_status"] = "removed_from_sale"
+        batch_mask = stones["batch_number"].astype(str).eq(str(batch_number))
+        status = stones.get("current_status", pd.Series("", index=stones.index)).astype(str).str.lower()
+        active_mask = batch_mask & ~status.eq("sold")
+        affected = int(active_mask.sum())
+        stones.loc[active_mask, "show_in_catalog"] = False
+        stones.loc[active_mask, "is_mvp_eligible"] = False
+        stones.loc[active_mask, "current_status"] = "removed_from_sale"
+        stones.loc[active_mask, "removed_from_sale_at"] = date.today().isoformat()
         save_stones(stones)
         write_admin_action(
             action="batch_soft_remove_from_sale",
             entity=str(batch_number),
             rows_count=affected,
             source="product_management_batch_detail",
-            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale. Public site requires separate publish.",
+            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; removed_from_sale_at=today. Sold stones untouched. Public site requires separate publish.",
         )
         st.success(f"Партия {batch_number} снята с продажи в Admin. Затронуто строк: {affected}. Для сайта нужен отдельный publish.")
         st.rerun()
 
 
 def render_product_batch_detail(batch_number: str):
-    stones = load_stones()
     batches = load_batches()
     meta = batch_metadata(batch_number, batches)
 
@@ -470,35 +553,43 @@ def render_product_batch_detail(batch_number: str):
         f"Комментарий: {meta.get('notes', 'not available')}"
     )
 
-    if stones.empty or "batch_number" not in stones.columns:
-        batch_stones = pd.DataFrame()
-    else:
-        batch_stones = stones[stones["batch_number"].astype(str).eq(str(batch_number))].copy()
-
     render_batch_finance(batch_number, meta)
 
-    if not batch_stones.empty and "current_status" in batch_stones.columns:
-        status = batch_stones["current_status"].astype(str).str.lower()
-        on_site = batch_stones[~status.isin(["sold", "removed", "removed_from_sale", "unavailable", "hidden"])]
-        sold = batch_stones[status.eq("sold")]
-        removed = batch_stones[status.isin(["removed", "removed_from_sale", "unavailable", "hidden"])]
-    else:
-        on_site = batch_stones
-        sold = pd.DataFrame()
-        removed = pd.DataFrame()
+    on_site, sold, removed, payments = batch_report_parts(batch_number)
+    full_report = excel_bytes(
+        {
+            "Камни на сайте": detail_table(on_site, "дата загрузки на сайт"),
+            "Проданные камни": detail_table(sold, "дата продажи"),
+            "Сняты с продажи": detail_table(removed, "дата снятия с продажи"),
+            "Оплаты поставщику": payments,
+        }
+    )
+    st.download_button(
+        "Скачать полный Excel-отчёт партии",
+        data=full_report,
+        file_name=f"KURGIN_batch_report_{safe_name(batch_number)}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"full_report_{batch_number}",
+    )
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("#### Камни на сайте / продаются ещё")
-        st.dataframe(detail_table(on_site, "дата загрузки на сайт"), use_container_width=True)
+        table = detail_table(on_site, "дата загрузки на сайт")
+        st.dataframe(table, use_container_width=True)
+        render_table_download("Скачать Excel", table, batch_number, "Камни_на_сайте")
     with col2:
         st.markdown("#### Проданные камни")
-        st.dataframe(detail_table(sold, "дата продажи"), use_container_width=True)
+        table = detail_table(sold, "дата продажи")
+        st.dataframe(table, use_container_width=True)
+        render_table_download("Скачать Excel", table, batch_number, "Проданные")
     with col3:
         st.markdown("#### Сняты с продажи")
-        st.dataframe(detail_table(removed, "дата снятия с продажи"), use_container_width=True)
+        table = detail_table(removed, "дата снятия с продажи")
+        st.dataframe(table, use_container_width=True)
+        render_table_download("Скачать Excel", table, batch_number, "Сняты_с_продажи")
 
-    render_soft_remove(batch_number, batch_stones)
+    render_soft_remove(batch_number)
 
 
 def product_state_rows() -> tuple[pd.DataFrame, pd.DataFrame]:
