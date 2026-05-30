@@ -2,9 +2,9 @@
 
 Repo: `kka45821-del/kurgin-admin-mvp`
 Scope: manual Admin import smoke checkpoint.
-Status: live import smoke completed / clean fixture smoke completed / main-large fixture smoke completed / no save / no production publish.
+Status: live import / preview / validation / save smoke completed; no production publish.
 
-This document records manual live Admin import smoke checkpoints for Admin open + controlled Excel import/preview without save or production publish.
+This document records manual live Admin import smoke checkpoints for Admin open, controlled Excel import/preview, validation, and save without production publish.
 
 Repositories not changed:
 
@@ -13,13 +13,13 @@ Repositories not changed:
 - `kurgin-score-analyzer`
 - `kurgin-formula-service`
 
-This checkpoint did not save batch data, did not publish to `kurgin-data`, did not change Streamlit, did not change Analyzer, did not change formula/scoring, did not change data schema, did not perform cleanup, and did not deploy production.
+This checkpoint did not publish to `kurgin-data`, did not intentionally change Streamlit public catalog data, did not change Analyzer, did not change formula/scoring, did not change schema, did not perform cleanup, and did not deploy production.
 
 ## 1. Final verdict
 
 ```text
-PASS for main + large import / preview / validation
-RISK for save/publish because they were not tested
+PASS for Admin import / preview / validation / save
+RISK for publish because publish was not tested
 ```
 
 Operational verdict:
@@ -34,25 +34,20 @@ Interpretation:
 - Controlled smoke Excel upload path worked.
 - Clean Excel fixture import / preview / validation worked.
 - Main + large Excel fixture import / preview / validation worked.
-- `KURGIN_Template` was detected in all recorded runtime runs.
-- Header row detection worked.
-- Column recognition worked, including a main + large fixture with `15` recognized and `0` unrecognized columns.
-- Raw preview and normalized preview were shown.
-- Validation worked.
-- Main rows and large rows were present in preview.
-- Main + large fixture produced no critical errors.
-- `price_rub = 0` produced warnings on rows `3`, `6`, `9`, `11`, `13`.
-- Save was not clicked.
+- Main + large fixture had no critical errors.
+- Warnings were only for `price_rub = 0`.
+- Confirmation checkbox was selected.
+- `Сохранить партию` was clicked.
+- Batch `P-0004` was saved.
+- `12` stones were saved.
 - Production publish was not executed.
-- `kurgin-data` was not changed.
+- `kurgin-data` was not intentionally changed.
+- Streamlit public catalog was not intentionally changed.
+- Analyzer/formula/scoring were not touched.
 
-This confirms the live Admin import / diagnostics / preview / validation path for:
+This confirms the Admin import / diagnostics / preview / validation / save path for the controlled main + large fixture.
 
-- a blocking-critical fixture;
-- a clean fixture;
-- a main + large fixture.
-
-The remaining risk is save/publish, because they were intentionally not tested.
+The remaining risk is production publish, because publish was intentionally not tested.
 
 ## 2. Smoke run summary
 
@@ -61,15 +56,9 @@ The remaining risk is save/publish, because they were intentionally not tested.
 | Run 1 — controlled fixture with critical error | Confirm critical/warning separation and blocked save | PASS for upload / diagnostics / preview / validation | Blocked by critical error | Not executed |
 | Run 2 — clean Excel fixture | Confirm clean import / preview / validation with no critical errors | PASS for clean import / preview / validation | Not clicked | Not executed |
 | Run 3 — main + large Excel fixture | Confirm main/large sections import, preview and validation | PASS for main + large import / preview / validation | Not clicked | Not executed |
+| Run 4 — main + large save smoke | Confirm clean main/large save without publish | PASS for Admin import / preview / validation / save | Clicked; batch `P-0004`, `12` stones saved | Not executed |
 
 ## 3. Run 1 — controlled fixture with critical error
-
-### 3.1. Result
-
-```text
-PASS for live upload / diagnostics / preview / validation
-RISK for publish because publish was not tested
-```
 
 Confirmed:
 
@@ -97,13 +86,6 @@ Price missing / zero remains warning-level in this smoke.
 
 ## 4. Run 2 — clean Excel fixture
 
-### 4.1. Result
-
-```text
-PASS for clean import / preview / validation
-RISK for publish because publish was not tested
-```
-
 Confirmed:
 
 - clean Excel fixture uploaded;
@@ -124,28 +106,10 @@ Interpretation:
 ```text
 Clean fixture import / preview / validation path is operational.
 No critical validation blocker appeared in the clean fixture.
-Price missing / zero still remains warning-level.
+Price missing / zero remained warning-level.
 ```
-
-### 4.2. Save behavior
-
-Save was intentionally not clicked.
-
-This means:
-
-- live clean upload/preview/validation is confirmed;
-- clean save path is not confirmed by this smoke;
-- no local Admin data mutation is claimed by this document;
-- no published data mutation occurred.
 
 ## 5. Run 3 — main + large Excel fixture
-
-### 5.1. Result
-
-```text
-PASS for main + large import / preview / validation
-RISK for save/publish because they were not tested
-```
 
 Confirmed:
 
@@ -173,63 +137,87 @@ Zero unrecognized columns indicates the fixture matches the recognized Admin imp
 Price missing / zero remains warning-level on the listed rows.
 ```
 
-### 5.2. Main / large coverage
+## 6. Run 4 — main + large save smoke, no publish
 
-The fixture confirmed that both section types were present in preview:
+### 6.1. Result
 
-- main rows present;
-- large rows present.
+```text
+PASS for Admin import / preview / validation / save
+RISK for publish because publish was not tested
+```
 
-This is important because main and large rows are the current controlled public MVP catalog sections where Round KURGIN Score requirements and price-warning behavior matter.
+Confirmed:
 
-### 5.3. Save behavior
+- main + large fixture had no critical errors;
+- warnings were only for `price_rub = 0`;
+- confirmation checkbox was selected;
+- `Сохранить партию` was clicked;
+- batch `P-0004` was saved;
+- `12` stones were saved;
+- production publish was not executed;
+- `kurgin-data` was not intentionally changed;
+- Streamlit public catalog was not intentionally changed;
+- Analyzer/formula/scoring were not touched.
 
-Save was intentionally not clicked.
+Interpretation:
 
-This means:
+```text
+Admin clean main + large save path is operational for batch P-0004.
+Save is confirmed, but production publish remains untested.
+```
 
-- live main + large upload/preview/validation is confirmed;
-- save path is not confirmed by this run;
-- no local Admin data mutation is claimed by this document;
-- no published data mutation occurred.
+### 6.2. Save impact boundary
 
-## 6. Required checks vs actual execution
+The save action is an Admin-side local data mutation.
 
-| Required check | Run 1 | Run 2 | Run 3 | Overall result |
-|---|---:|---:|---:|---:|
-| Live Admin app opened | PASS | Already confirmed | Already confirmed | PASS |
-| Controlled Excel fixture uploaded | PASS | PASS | PASS | PASS |
-| `KURGIN_Template` detected | PASS | PASS | PASS | PASS |
-| Header row detected | PASS: row `1` | PASS | PASS | PASS |
-| Columns recognized | PASS: `10` recognized / `9` unrecognized | PASS: `15` recognized / `8` unrecognized | PASS: `15` recognized / `0` unrecognized | PASS |
-| Raw preview shown | PASS | PASS | PASS | PASS |
-| Normalized preview shown | PASS | PASS | PASS | PASS |
-| Main rows present | Not targeted | Not targeted | PASS | PASS for Run 3 |
-| Large rows present | Not targeted | Not targeted | PASS | PASS for Run 3 |
-| Validation worked | PASS | PASS | PASS | PASS |
-| Critical/warning separation visible | PASS | PASS | PASS | PASS |
-| Critical error behavior | PASS: missing `report_number` critical | PASS: no critical errors found | PASS: no critical errors found | PASS |
-| Warning behavior | PASS: `price_rub = 0` warning | PASS: `price_rub = 0` warning on row `3` | PASS: `price_rub = 0` warnings on rows `3`, `6`, `9`, `11`, `13` | PASS |
-| Save behavior | PASS: blocked due to critical error | Not clicked | Not clicked | RISK / not fully tested |
-| Production publish | Not executed | Not executed | Not executed | RISK / not tested |
-| `kurgin-data` unchanged | PASS | PASS | PASS | PASS |
-| Code/UI/schema unchanged | PASS | PASS | PASS | PASS |
+Expected Admin-side impact from save:
 
-## 7. Production publish boundary
+- local Admin `data/stones.csv` receives the saved fixture rows;
+- local Admin `data/upload_batches.csv` receives/updates the batch record for `P-0004`;
+- local Admin `data/admin_actions.csv` may record the import action.
+
+Not implied by this save:
+
+- no `kurgin-data` publish;
+- no public Streamlit catalog refresh from new data;
+- no production deploy;
+- no payment/reserve/sold behavior;
+- no Analyzer/formula/scoring behavior change.
+
+## 7. Required checks vs actual execution
+
+| Required check | Run 1 | Run 2 | Run 3 | Run 4 | Overall result |
+|---|---:|---:|---:|---:|---:|
+| Live Admin app opened | PASS | Already confirmed | Already confirmed | Already confirmed | PASS |
+| Controlled Excel fixture uploaded | PASS | PASS | PASS | PASS | PASS |
+| `KURGIN_Template` detected | PASS | PASS | PASS | PASS | PASS |
+| Header row detected | PASS: row `1` | PASS | PASS | PASS | PASS |
+| Columns recognized | PASS: `10` / `9` | PASS: `15` / `8` | PASS: `15` / `0` | Existing main/large fixture used | PASS |
+| Raw preview shown | PASS | PASS | PASS | PASS | PASS |
+| Normalized preview shown | PASS | PASS | PASS | PASS | PASS |
+| Main rows present | Not targeted | Not targeted | PASS | PASS | PASS |
+| Large rows present | Not targeted | Not targeted | PASS | PASS | PASS |
+| Validation worked | PASS | PASS | PASS | PASS | PASS |
+| Critical errors | PASS: missing `report_number` critical | PASS: none in clean fixture | PASS: none in main/large | PASS: none in saved main/large | PASS |
+| Warning behavior | PASS | PASS: row `3` | PASS: rows `3`, `6`, `9`, `11`, `13` | PASS: warnings only for `price_rub = 0` | PASS |
+| Save behavior | PASS: blocked due to critical error | Not clicked | Not clicked | PASS: batch `P-0004`, `12` stones saved | PASS for Admin save |
+| Production publish | Not executed | Not executed | Not executed | Not executed | RISK / not tested |
+| `kurgin-data` changed | No | No | No | Not intentionally changed | PASS |
+| Code/UI/schema changed | No | No | No | No | PASS |
+
+## 8. Production publish boundary
 
 Production publish was not executed in any smoke run.
 
 Explicitly not done:
 
-- no `kurgin-data` publish;
-- no `catalog.json` update;
-- no `data/catalog.json` update;
-- no `stones.csv` update;
-- no `upload_batches.csv` update;
-- no Streamlit data refresh;
+- no intentional `kurgin-data` publish;
+- no intentional `catalog.json` update;
+- no intentional `data/catalog.json` update;
+- no intentional public `stones.csv` update;
+- no intentional public `upload_batches.csv` update;
+- no intentional Streamlit public catalog refresh;
 - no production deploy.
-
-This satisfies the no-publish boundary for the import smoke tests.
 
 Publish verdict:
 
@@ -239,63 +227,66 @@ RISK: not tested
 
 Reason:
 
-- these smoke runs were intentionally limited to Admin open + import/diagnostics/preview/validation;
-- production publish was out of scope and remains blocked until a separate approved publish-smoke task.
+- smoke runs have now confirmed upload, preview, validation and Admin-side save;
+- production publish remains a separate flow and must not be inferred as passed.
 
-## 8. Save boundary
-
-Save was not clicked in Run 2 or Run 3.
+## 9. Save boundary
 
 Save behavior status:
 
 ```text
-RISK: not fully tested
+PASS for Admin-side save
 ```
 
-Reason:
+Confirmed:
 
-- Run 1 confirmed save blocking when a critical error exists;
-- Run 2 and Run 3 confirmed clean validation but did not execute save;
-- therefore clean save path is still unconfirmed.
+- clean main + large fixture had no critical errors;
+- confirmation checkbox was selected;
+- save button was clicked;
+- batch `P-0004` saved successfully;
+- `12` stones saved.
 
-Save should only be tested under a separate approved clean save smoke with rollback plan and no production publish.
-
-## 9. Blockers
-
-### 9.1. Runtime blockers
+Remaining limitation:
 
 ```text
-None for live upload / diagnostics / preview / validation path.
+Save result is not a publish result.
 ```
 
-### 9.2. Remaining limitations
+Admin-side save does not equal public catalog publication.
+
+## 10. Blockers
+
+Runtime blockers for import / preview / validation / Admin-side save path:
+
+```text
+None observed.
+```
+
+Remaining limitations:
 
 | ID | Limitation | Impact | Required future action |
 |---|---|---|---|
-| LIM-001 | Publish was not tested | Cannot mark publish flow PASS from these smoke runs | Run separate controlled publish smoke only after explicit approval |
-| LIM-002 | Clean fixture save was not clicked | Cannot mark clean save path PASS from Run 2 or Run 3 | Run separate clean-fixture save smoke if needed, still without publish |
-| LIM-003 | Run 1 and Run 2 had unrecognized columns | They must remain inactive unless mapped by contract | Do not map them without separate approval/tests |
-| LIM-004 | Run 3 had zero unrecognized columns but still did not test save | Import contract alignment does not imply save/publish readiness | Keep save/publish as separate smoke tasks |
+| LIM-001 | Publish was not tested | Cannot mark publish flow PASS | Run separate controlled publish smoke only after explicit approval |
+| LIM-002 | Public Streamlit refresh after Admin save was not tested | Cannot mark public data update PASS | Requires publish first, then Streamlit smoke |
+| LIM-003 | `kurgin-data` was not intentionally changed | Correct for this task, but full flow remains incomplete | Keep full Admin -> Data -> Streamlit flow at RISK until publish smoke |
 
-### 9.3. No source-level code blocker found
-
-No source-level issue was found that justifies code changes under this task.
+No source-level code blocker was found.
 
 No fix was made.
 
-## 10. Risk items
+## 11. Risk items
 
 | ID | Risk | Severity | Handling |
 |---|---|---:|---|
 | RISK-001 | Publish remains untested. | Medium | Run controlled publish smoke only after explicit approval. |
-| RISK-002 | Clean save path remains untested. | Medium | Run separate clean save smoke only with rollback plan and no publish. |
-| RISK-003 | Admin import auto-marks MVP flags and relies on Publication Gate review. | Medium | Continue requiring preview/gate review before save/publish workflow. |
-| RISK-004 | Unknown/unrecognized columns were present in Run 1 and Run 2. | Low-medium | Keep them inactive unless explicitly mapped by a separate contract/task. |
-| RISK-005 | Production data must remain untouched during import-only smoke. | High | Keep publish blocked unless a separate publish-smoke task is approved. |
+| RISK-002 | Admin-side saved smoke rows must not be mistaken for published public data. | Medium | Keep save/publish distinction explicit. |
+| RISK-003 | Admin import auto-marks MVP flags and relies on Publication Gate review. | Medium | Continue requiring preview/gate review before publish workflow. |
+| RISK-004 | Public catalog still depends on separate `kurgin-data` publish. | Medium | Re-run Streamlit catalog smoke after any approved publish. |
+| RISK-005 | Smoke rows must remain traceable for rollback/audit. | Medium | Keep batch `P-0004` and fixture IDs identifiable. |
 
-## 11. Evidence summary
+## 12. Evidence summary
 
-### 11.1. Run 1 evidence
+### 12.1. Run 1 evidence
 
 ```text
 live Admin app opened
@@ -313,7 +304,7 @@ Save batch remained blocked because critical error exists
 production publish was NOT executed
 ```
 
-### 11.2. Run 2 evidence
+### 12.2. Run 2 evidence
 
 ```text
 clean Excel fixture uploaded
@@ -330,7 +321,7 @@ production publish was not executed
 kurgin-data was not changed
 ```
 
-### 11.3. Run 3 evidence
+### 12.3. Run 3 evidence
 
 ```text
 main + large Excel fixture uploaded
@@ -349,30 +340,42 @@ production publish was not executed
 kurgin-data was not changed
 ```
 
-## 12. Allowed next actions
+### 12.4. Run 4 evidence
+
+```text
+main + large fixture had no critical errors
+warnings only for price_rub = 0
+checkbox confirmed
+Save batch clicked
+batch P-0004 saved
+12 stones saved
+production publish was NOT executed
+kurgin-data was NOT intentionally changed
+Streamlit public catalog was NOT intentionally changed
+Analyzer/formula/scoring were not touched
+```
+
+## 13. Allowed next actions
 
 Allowed next actions:
 
-1. Keep this smoke result as live validation evidence for upload / diagnostics / preview / validation.
-2. Run a clean-fixture save smoke, if explicitly needed, only after confirming rollback plan and still without production publish.
+1. Keep this smoke result as live validation evidence for upload / diagnostics / preview / validation / Admin save.
+2. Verify local Admin saved batch `P-0004` if needed.
 3. Run publish dry-run/manual download validation.
 4. Run controlled publish smoke with `GITHUB_TOKEN` only after explicit approval.
-5. Add or document a small smoke fixture path only if separately approved.
-6. Keep unrecognized columns inactive unless a separate mapping/contract update is approved.
-7. Add fixture-based automated smoke tests only through a separate approved code task.
-8. Use the main + large fixture as the current best manual fixture pattern for import validation because it produced zero unrecognized columns.
+5. Run Streamlit current-catalog smoke again after any approved publish.
+6. Keep save/publish separation explicit in future docs and tasks.
+7. Keep smoke rows/batch traceable for rollback/audit.
 
-## 13. Blocked actions
+## 14. Blocked actions
 
-Blocked by this smoke task:
+Blocked by this smoke update task:
 
-- save batch now;
 - publish to `kurgin-data`;
-- update `catalog.json`;
-- update `data/catalog.json`;
-- update `stones.csv`;
-- update `upload_batches.csv`;
-- data schema changes;
+- intentional update of public `catalog.json`;
+- intentional update of public `data/catalog.json`;
+- intentional update of public `stones.csv`;
+- intentional update of public `upload_batches.csv`;
 - code changes without separate approval;
 - UI changes;
 - Streamlit changes;
@@ -386,36 +389,32 @@ Blocked by this smoke task:
 - file deletion;
 - file moving.
 
-## 14. Acceptance checklist
+## 15. Acceptance checklist
 
-This document satisfies the main-large smoke-result update task if:
+This document satisfies the save-smoke-result update task if:
 
 - `docs/KURGIN_ADMIN_IMPORT_SMOKE_V0_1.md` is updated;
-- main + large Excel fixture upload is recorded;
-- `KURGIN_Template` detection is recorded;
-- header row detection is recorded;
-- `15` recognized and `0` unrecognized columns are recorded;
-- raw preview is recorded;
-- normalized preview is recorded;
-- main rows present is recorded;
-- large rows present is recorded;
-- no critical errors found is recorded;
-- `price_rub = 0` warnings on rows `3`, `6`, `9`, `11`, `13` are recorded;
-- save not clicked is recorded;
+- main + large fixture no-critical status is recorded;
+- warnings-only-for-price-zero status is recorded;
+- checkbox confirmation is recorded;
+- save click is recorded;
+- batch `P-0004` saved is recorded;
+- `12` stones saved is recorded;
 - production publish not executed is recorded;
-- `kurgin-data` not changed is recorded;
+- `kurgin-data` not intentionally changed is recorded;
+- Streamlit public catalog not intentionally changed is recorded;
+- Analyzer/formula/scoring not touched is recorded;
 - no code changes are made;
 - no UI changes are made;
-- no data/schema changes are made;
-- no Analyzer/formula/scoring changes are made.
+- no schema changes are made.
 
-## 15. Closure
+## 16. Closure
 
 Final runtime result:
 
 ```text
-PASS for main + large import / preview / validation
-RISK for save/publish because they were not tested
+PASS for Admin import / preview / validation / save
+RISK for publish because publish was not tested
 ```
 
 Operational document verdict remains:
@@ -428,6 +427,7 @@ The manual live Admin import smoke now confirms:
 
 - blocking-critical fixture behavior;
 - clean fixture import / preview / validation behavior;
-- main + large fixture import / preview / validation behavior with zero unrecognized columns.
+- main + large fixture import / preview / validation behavior with zero unrecognized columns;
+- Admin-side save behavior for batch `P-0004` with `12` stones saved.
 
-Save and publish remain separate untested paths and must not be inferred as passed from import-only smoke tests.
+Production publish remains a separate untested path and must not be inferred as passed from Admin-side save.
