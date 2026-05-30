@@ -18,7 +18,11 @@ PRICE_COLS = [
     'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub',
     'manual_usd_rub_rate', 'global_price_adjustment_percent', 'pricing_run_timestamp',
 ]
-STATE_COLS = ['current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
+STATE_COLS = [
+    'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog',
+    'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin',
+    'upload_confirmed', 'notes_internal', 'removed_from_sale_at',
+]
 STONE_COLS = BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = [
     'batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes',
@@ -73,7 +77,15 @@ ALIASES = {
     **{col: [col, col.replace('tag', 'teg'), col.replace('tag', 'тег')] for col in TAG_COLS},
 }
 
-TEXT_COLS = ['stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed', 'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price', 'pricing_run_timestamp', *TAG_COLS, 'current_status', 'batch_number', 'upload_date', 'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received', 'checked_by_kurgin', 'upload_confirmed', 'notes_internal']
+TEXT_COLS = [
+    'stone_id', 'title', 'shape', 'color', 'clarity', 'lab', 'report_number', 'section',
+    'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'is_colored', 'color_type',
+    'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'price_confirmed',
+    'availability_confirmed', 'price_source', 'price_status', 'admin_price_note', 'show_without_price',
+    'pricing_run_timestamp', *TAG_COLS, 'current_status', 'batch_number', 'upload_date',
+    'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received',
+    'checked_by_kurgin', 'upload_confirmed', 'notes_internal', 'removed_from_sale_at',
+]
 NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub', 'manual_usd_rub_rate', 'global_price_adjustment_percent']
 BATCH_NUMBER_COLS = ['stones_count', 'purchase_total_rub', 'purchase_advance_rub', 'purchase_debt_rub']
 PAYMENT_NUMBER_COLS = ['amount_rub']
@@ -222,6 +234,7 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
     out['checked_by_kurgin'] = True
     out['upload_confirmed'] = True
     out['notes_internal'] = notes or 'uploaded_xlsx'
+    out['removed_from_sale_at'] = ''
 
     for col in NUMBER_COLS:
         out[col] = clean_number(out[col])
