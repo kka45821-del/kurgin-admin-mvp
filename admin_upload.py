@@ -219,7 +219,7 @@ def score_gate_errors(normalized: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def render_upload_tab() -> None:
+def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = False) -> None:
     st.subheader("Загрузка новой партии")
     st.caption("Единый импорт: KURGIN-шаблон, supplier packing list и результаты KURGIN Score.")
     st.warning(
@@ -239,9 +239,19 @@ def render_upload_tab() -> None:
     supplier_name = st.text_input("Поставщик")
     uploaded_file = st.file_uploader("Файл камней .xlsx", type=["xlsx"])
     notes = st.text_area("Заметка")
-    mode = st.radio("Режим", ["Добавить к текущим", "Заменить весь каталог"], horizontal=True)
+    if allow_replace:
+        mode = st.radio("Режим", ["Добавить к текущим", "Заменить весь каталог"], horizontal=True)
+    else:
+        mode = "Добавить к текущим"
+        st.info("Безопасный режим Product Management: только добавление к текущему каталогу. Замена всего каталога скрыта.")
 
     if uploaded_file is None:
+        if show_next_to_pricing and st.session_state.get("product_management_last_batch"):
+            st.success("Последняя сохранённая партия готова к шагу установки цены.")
+            if st.button("Далее", key="product_upload_next_existing"):
+                st.session_state["product_management_menu"] = "Установить цену"
+                st.session_state["product_management_view"] = "main"
+                st.rerun()
         return
 
     xls = pd.ExcelFile(uploaded_file)
@@ -322,4 +332,17 @@ def render_upload_tab() -> None:
             source="admin_upload",
             details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}",
         )
+        st.session_state["product_management_last_batch"] = {
+            "batch_number": str(batch_number).strip(),
+            "upload_date": str(upload_date),
+            "supplier_name": str(supplier_name).strip(),
+            "notes": notes,
+            "stones_count": int(len(normalized)),
+        }
         st.success(f"Партия {batch_number} сохранена. Камней: {len(normalized)}")
+
+    if show_next_to_pricing and st.session_state.get("product_management_last_batch"):
+        if st.button("Далее", key="product_upload_next_to_pricing"):
+            st.session_state["product_management_menu"] = "Установить цену"
+            st.session_state["product_management_view"] = "main"
+            st.rerun()
