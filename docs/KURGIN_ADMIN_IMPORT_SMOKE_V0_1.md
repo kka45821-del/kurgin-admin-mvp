@@ -2,9 +2,9 @@
 
 Repo: `kka45821-del/kurgin-admin-mvp`
 Scope: manual Admin import smoke checkpoint.
-Status: live import / preview / validation / save smoke completed; no production publish.
+Status: live import / preview / validation / save / Admin catalog visibility smoke completed; no production publish.
 
-This document records manual live Admin import smoke checkpoints for Admin open, controlled Excel import/preview, validation, and save without production publish.
+This document records manual live Admin import smoke checkpoints for Admin open, controlled Excel import/preview, validation, save, and Admin catalog visibility without production publish.
 
 Repositories not changed:
 
@@ -18,7 +18,7 @@ This checkpoint did not publish to `kurgin-data`, did not intentionally change S
 ## 1. Final verdict
 
 ```text
-PASS for Admin import / preview / validation / save
+PASS for Admin import / preview / validation / save / Admin catalog visibility
 RISK for publish because publish was not tested
 ```
 
@@ -40,12 +40,16 @@ Interpretation:
 - `Сохранить партию` was clicked.
 - Batch `P-0004` was saved.
 - `12` stones were saved.
+- Saved `KRG-ML-*` rows are visible in Admin catalog.
+- Old catalog rows did not disappear.
+- Batch save is confirmed.
+- `Save catalog` was not clicked.
 - Production publish was not executed.
 - `kurgin-data` was not intentionally changed.
-- Streamlit public catalog was not intentionally changed.
+- Streamlit public catalog was not intentionally updated from this save.
 - Analyzer/formula/scoring were not touched.
 
-This confirms the Admin import / diagnostics / preview / validation / save path for the controlled main + large fixture.
+This confirms the Admin import / diagnostics / preview / validation / save / Admin catalog visibility path for the controlled main + large fixture.
 
 The remaining risk is production publish, because publish was intentionally not tested.
 
@@ -57,6 +61,7 @@ The remaining risk is production publish, because publish was intentionally not 
 | Run 2 — clean Excel fixture | Confirm clean import / preview / validation with no critical errors | PASS for clean import / preview / validation | Not clicked | Not executed |
 | Run 3 — main + large Excel fixture | Confirm main/large sections import, preview and validation | PASS for main + large import / preview / validation | Not clicked | Not executed |
 | Run 4 — main + large save smoke | Confirm clean main/large save without publish | PASS for Admin import / preview / validation / save | Clicked; batch `P-0004`, `12` stones saved | Not executed |
+| Run 5 — Admin catalog visibility smoke | Confirm saved smoke rows are visible and old rows remain | PASS for Admin catalog visibility | No additional save | Not executed |
 
 ## 3. Run 1 — controlled fixture with critical error
 
@@ -184,28 +189,69 @@ Not implied by this save:
 - no payment/reserve/sold behavior;
 - no Analyzer/formula/scoring behavior change.
 
-## 7. Required checks vs actual execution
+## 7. Run 5 — Admin catalog visibility smoke
 
-| Required check | Run 1 | Run 2 | Run 3 | Run 4 | Overall result |
-|---|---:|---:|---:|---:|---:|
-| Live Admin app opened | PASS | Already confirmed | Already confirmed | Already confirmed | PASS |
-| Controlled Excel fixture uploaded | PASS | PASS | PASS | PASS | PASS |
-| `KURGIN_Template` detected | PASS | PASS | PASS | PASS | PASS |
-| Header row detected | PASS: row `1` | PASS | PASS | PASS | PASS |
-| Columns recognized | PASS: `10` / `9` | PASS: `15` / `8` | PASS: `15` / `0` | Existing main/large fixture used | PASS |
-| Raw preview shown | PASS | PASS | PASS | PASS | PASS |
-| Normalized preview shown | PASS | PASS | PASS | PASS | PASS |
-| Main rows present | Not targeted | Not targeted | PASS | PASS | PASS |
-| Large rows present | Not targeted | Not targeted | PASS | PASS | PASS |
-| Validation worked | PASS | PASS | PASS | PASS | PASS |
-| Critical errors | PASS: missing `report_number` critical | PASS: none in clean fixture | PASS: none in main/large | PASS: none in saved main/large | PASS |
-| Warning behavior | PASS | PASS: row `3` | PASS: rows `3`, `6`, `9`, `11`, `13` | PASS: warnings only for `price_rub = 0` | PASS |
-| Save behavior | PASS: blocked due to critical error | Not clicked | Not clicked | PASS: batch `P-0004`, `12` stones saved | PASS for Admin save |
-| Production publish | Not executed | Not executed | Not executed | Not executed | RISK / not tested |
-| `kurgin-data` changed | No | No | No | Not intentionally changed | PASS |
-| Code/UI/schema changed | No | No | No | No | PASS |
+### 7.1. Result
 
-## 8. Production publish boundary
+```text
+PASS for Admin catalog visibility after save
+RISK for publish because publish was not tested
+```
+
+Confirmed:
+
+- saved `KRG-ML-*` rows are visible in Admin catalog;
+- old catalog rows did not disappear;
+- batch save is confirmed;
+- production publish was not executed;
+- `kurgin-data` was not changed intentionally;
+- public Streamlit was not updated from this save;
+- `Save catalog` was not clicked;
+- `Publish` was not clicked.
+
+Interpretation:
+
+```text
+Admin-side saved rows are visible in the Admin catalog.
+The save did not replace or remove the old Admin catalog rows.
+Admin catalog visibility is confirmed, but public publication remains untested.
+```
+
+### 7.2. Public boundary
+
+Admin catalog visibility does not equal public catalog publication.
+
+The following remain true:
+
+- Admin local catalog contains saved smoke rows;
+- public `kurgin-data` was not intentionally changed;
+- public Streamlit was not updated from this save;
+- production publish remains untested.
+
+## 8. Required checks vs actual execution
+
+| Required check | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Overall result |
+|---|---:|---:|---:|---:|---:|---:|
+| Live Admin app opened | PASS | Already confirmed | Already confirmed | Already confirmed | Already confirmed | PASS |
+| Controlled Excel fixture uploaded | PASS | PASS | PASS | PASS | Already saved | PASS |
+| `KURGIN_Template` detected | PASS | PASS | PASS | PASS | Not applicable | PASS |
+| Header row detected | PASS: row `1` | PASS | PASS | PASS | Not applicable | PASS |
+| Columns recognized | PASS: `10` / `9` | PASS: `15` / `8` | PASS: `15` / `0` | Existing main/large fixture used | Not applicable | PASS |
+| Raw preview shown | PASS | PASS | PASS | PASS | Not applicable | PASS |
+| Normalized preview shown | PASS | PASS | PASS | PASS | Not applicable | PASS |
+| Main rows present | Not targeted | Not targeted | PASS | PASS | PASS | PASS |
+| Large rows present | Not targeted | Not targeted | PASS | PASS | PASS | PASS |
+| Validation worked | PASS | PASS | PASS | PASS | Not applicable | PASS |
+| Critical errors | PASS: missing `report_number` critical | PASS: none in clean fixture | PASS: none in main/large | PASS: none in saved main/large | Not applicable | PASS |
+| Warning behavior | PASS | PASS: row `3` | PASS: rows `3`, `6`, `9`, `11`, `13` | PASS: warnings only for `price_rub = 0` | Not applicable | PASS |
+| Save behavior | PASS: blocked due to critical error | Not clicked | Not clicked | PASS: batch `P-0004`, `12` stones saved | Confirmed visible | PASS for Admin save/visibility |
+| Old Admin rows retained | Not targeted | Not targeted | Not targeted | Not targeted | PASS | PASS |
+| Production publish | Not executed | Not executed | Not executed | Not executed | Not executed | RISK / not tested |
+| `kurgin-data` changed | No | No | No | Not intentionally changed | Not intentionally changed | PASS |
+| Public Streamlit updated | No | No | No | Not intentionally changed | Not intentionally updated from save | PASS |
+| Code/UI/schema changed | No | No | No | No | No | PASS |
+
+## 9. Production publish boundary
 
 Production publish was not executed in any smoke run.
 
@@ -227,15 +273,15 @@ RISK: not tested
 
 Reason:
 
-- smoke runs have now confirmed upload, preview, validation and Admin-side save;
+- smoke runs have now confirmed upload, preview, validation, Admin-side save and Admin catalog visibility;
 - production publish remains a separate flow and must not be inferred as passed.
 
-## 9. Save boundary
+## 10. Save / catalog visibility boundary
 
 Save behavior status:
 
 ```text
-PASS for Admin-side save
+PASS for Admin-side save and Admin catalog visibility
 ```
 
 Confirmed:
@@ -244,7 +290,9 @@ Confirmed:
 - confirmation checkbox was selected;
 - save button was clicked;
 - batch `P-0004` saved successfully;
-- `12` stones saved.
+- `12` stones saved;
+- saved `KRG-ML-*` rows are visible in Admin catalog;
+- old catalog rows did not disappear.
 
 Remaining limitation:
 
@@ -252,11 +300,11 @@ Remaining limitation:
 Save result is not a publish result.
 ```
 
-Admin-side save does not equal public catalog publication.
+Admin-side save and Admin catalog visibility do not equal public catalog publication.
 
-## 10. Blockers
+## 11. Blockers
 
-Runtime blockers for import / preview / validation / Admin-side save path:
+Runtime blockers for import / preview / validation / Admin-side save / Admin catalog visibility path:
 
 ```text
 None observed.
@@ -274,7 +322,7 @@ No source-level code blocker was found.
 
 No fix was made.
 
-## 11. Risk items
+## 12. Risk items
 
 | ID | Risk | Severity | Handling |
 |---|---|---:|---|
@@ -282,11 +330,11 @@ No fix was made.
 | RISK-002 | Admin-side saved smoke rows must not be mistaken for published public data. | Medium | Keep save/publish distinction explicit. |
 | RISK-003 | Admin import auto-marks MVP flags and relies on Publication Gate review. | Medium | Continue requiring preview/gate review before publish workflow. |
 | RISK-004 | Public catalog still depends on separate `kurgin-data` publish. | Medium | Re-run Streamlit catalog smoke after any approved publish. |
-| RISK-005 | Smoke rows must remain traceable for rollback/audit. | Medium | Keep batch `P-0004` and fixture IDs identifiable. |
+| RISK-005 | Smoke rows must remain traceable for rollback/audit. | Medium | Keep batch `P-0004` and `KRG-ML-*` fixture IDs identifiable. |
 
-## 12. Evidence summary
+## 13. Evidence summary
 
-### 12.1. Run 1 evidence
+### 13.1. Run 1 evidence
 
 ```text
 live Admin app opened
@@ -304,7 +352,7 @@ Save batch remained blocked because critical error exists
 production publish was NOT executed
 ```
 
-### 12.2. Run 2 evidence
+### 13.2. Run 2 evidence
 
 ```text
 clean Excel fixture uploaded
@@ -321,7 +369,7 @@ production publish was not executed
 kurgin-data was not changed
 ```
 
-### 12.3. Run 3 evidence
+### 13.3. Run 3 evidence
 
 ```text
 main + large Excel fixture uploaded
@@ -340,7 +388,7 @@ production publish was not executed
 kurgin-data was not changed
 ```
 
-### 12.4. Run 4 evidence
+### 13.4. Run 4 evidence
 
 ```text
 main + large fixture had no critical errors
@@ -355,19 +403,32 @@ Streamlit public catalog was NOT intentionally changed
 Analyzer/formula/scoring were not touched
 ```
 
-## 13. Allowed next actions
+### 13.5. Run 5 evidence
+
+```text
+saved KRG-ML-* rows are visible in Admin catalog
+old catalog rows did not disappear
+batch save is confirmed
+publish was not executed
+kurgin-data was not changed intentionally
+public Streamlit was not updated from this save
+Save catalog / Publish were not clicked
+```
+
+## 14. Allowed next actions
 
 Allowed next actions:
 
-1. Keep this smoke result as live validation evidence for upload / diagnostics / preview / validation / Admin save.
+1. Keep this smoke result as live validation evidence for upload / diagnostics / preview / validation / Admin save / Admin catalog visibility.
 2. Verify local Admin saved batch `P-0004` if needed.
 3. Run publish dry-run/manual download validation.
 4. Run controlled publish smoke with `GITHUB_TOKEN` only after explicit approval.
 5. Run Streamlit current-catalog smoke again after any approved publish.
 6. Keep save/publish separation explicit in future docs and tasks.
 7. Keep smoke rows/batch traceable for rollback/audit.
+8. Do not infer public catalog update from Admin catalog visibility.
 
-## 14. Blocked actions
+## 15. Blocked actions
 
 Blocked by this smoke update task:
 
@@ -389,31 +450,30 @@ Blocked by this smoke update task:
 - file deletion;
 - file moving.
 
-## 15. Acceptance checklist
+## 16. Acceptance checklist
 
-This document satisfies the save-smoke-result update task if:
+This document satisfies the save-visibility-smoke-result update task if:
 
 - `docs/KURGIN_ADMIN_IMPORT_SMOKE_V0_1.md` is updated;
-- main + large fixture no-critical status is recorded;
-- warnings-only-for-price-zero status is recorded;
-- checkbox confirmation is recorded;
-- save click is recorded;
-- batch `P-0004` saved is recorded;
-- `12` stones saved is recorded;
+- saved `KRG-ML-*` rows visible in Admin catalog is recorded;
+- old catalog rows did not disappear is recorded;
+- batch save confirmed is recorded;
 - production publish not executed is recorded;
 - `kurgin-data` not intentionally changed is recorded;
-- Streamlit public catalog not intentionally changed is recorded;
-- Analyzer/formula/scoring not touched is recorded;
+- public Streamlit not updated from save is recorded;
+- `Save catalog` not clicked is recorded;
+- `Publish` not clicked is recorded;
 - no code changes are made;
 - no UI changes are made;
-- no schema changes are made.
+- no schema changes are made;
+- no Analyzer/formula/scoring changes are made.
 
-## 16. Closure
+## 17. Closure
 
 Final runtime result:
 
 ```text
-PASS for Admin import / preview / validation / save
+PASS for Admin import / preview / validation / save / Admin catalog visibility
 RISK for publish because publish was not tested
 ```
 
@@ -428,6 +488,7 @@ The manual live Admin import smoke now confirms:
 - blocking-critical fixture behavior;
 - clean fixture import / preview / validation behavior;
 - main + large fixture import / preview / validation behavior with zero unrecognized columns;
-- Admin-side save behavior for batch `P-0004` with `12` stones saved.
+- Admin-side save behavior for batch `P-0004` with `12` stones saved;
+- Admin catalog visibility for saved `KRG-ML-*` rows while old catalog rows remained present.
 
-Production publish remains a separate untested path and must not be inferred as passed from Admin-side save.
+Production publish remains a separate untested path and must not be inferred as passed from Admin-side save or Admin catalog visibility.
