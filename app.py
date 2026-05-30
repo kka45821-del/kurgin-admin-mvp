@@ -1,9 +1,11 @@
+from datetime import date, datetime
+
 import pandas as pd
 import streamlit as st
 
 from admin_auth import logout_button, require_admin_login
 from admin_batches import render_batches_tab
-from admin_io import load_batches, load_stones, save_stones
+from admin_io import add_batch_payment, load_batch_payments, load_batches, load_stones, save_stones
 from admin_log import load_admin_actions, write_admin_action
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
 from admin_page_settings import render_page_settings
@@ -80,6 +82,33 @@ def ensure_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return result
 
 
+def rub(value) -> str:
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    return f"{amount:,.0f} ₽".replace(",", " ")
+
+
+def batch_metadata(batch_number: str, batches: pd.DataFrame) -> dict:
+    if batches.empty or "batch_number" not in batches.columns:
+        return {}
+    rows = batches[batches["batch_number"].astype(str).eq(str(batch_number))]
+    if rows.empty:
+        return {}
+    return rows.iloc[0].to_dict()
+
+
+def batch_payment_sum(batch_number: str) -> float:
+    payments = load_batch_payments()
+    if payments.empty or "batch_number" not in payments.columns:
+        return 0.0
+    rows = payments[payments["batch_number"].astype(str).eq(str(batch_number))]
+    if rows.empty:
+        return 0.0
+    return float(pd.to_numeric(rows["amount_rub"], errors="coerce").fillna(0).sum())
+
+
 def render_dashboard():
     stones = load_stones()
     public = public_preview(stones)
@@ -107,7 +136,7 @@ def render_dashboard():
         st.dataframe(warnings, use_container_width=True)
 
     st.markdown("### Быстрые действия")
-    st.write("Управление товаром → Загрузка → Опубликовать")
+    st.write("Управление товаром → Загрузка → Установить цену → Опубликовать → Загруженные партии")
 
 
 def product_public_table() -> pd.DataFrame:
@@ -121,11 +150,11 @@ def product_public_table() -> pd.DataFrame:
     result = public.copy()
     result["KURGIN Score"] = result.get("karo_score", "")
     if "public_action" in result.columns:
-        result["public status"] = result["public_action"].astype(str)
+        result["public_status"] = result["public_action"].astype(str)
     elif "public_sellable" in result.columns:
-        result["public status"] = result["public_sellable"].map({True: "ready_for_checkout", False: "request_price"})
+        result["public_status"] = result["public_sellable"].map({True: "ready_for_checkout", False: "request_price"})
     else:
-        result["public status"] = "ready_for_publish"
+        result["public_status"] = "ready_for_publish"
 
     columns = [
         "stone_id",
@@ -142,7 +171,7 @@ def product_public_table() -> pd.DataFrame:
         "price_rub",
         "show_in_catalog",
         "current_status",
-        "public status",
+        "public_status",
     ]
     result = ensure_columns(result, columns)
     return result[columns]
@@ -160,7 +189,7 @@ def render_product_all_stones():
     result["KURGIN Score"] = result.get("karo_score", "")
     public = public_preview(stones)
     public_ids = set(public["stone_id"].astype(str)) if not public.empty and "stone_id" in public.columns else set()
-    result["public status"] = result.get("stone_id", pd.Series("", index=result.index)).astype(str).map(
+    result["public_status"] = result.get("stone_id", pd.Series("", index=result.index)).astype(str).map(
         lambda value: "public_preview" if value in public_ids else "not_public"
     )
 
@@ -183,12 +212,9 @@ def render_product_all_stones():
         "price_rub",
         "price_status",
         "price_source",
-        "дата загрузки",
-        "public status",
         "current_status",
+        "public_status",
     ] + tag_cols
-    if "upload_date" in result.columns:
-        result["дата загрузки"] = result["upload_date"]
     result = ensure_columns(result, columns)
     st.dataframe(result[columns], use_container_width=True)
 
@@ -210,13 +236,16 @@ def render_product_pricing_placeholder():
         return
 
     st.markdown("#### Последняя загруженная партия")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Номер партии", last_batch.get("batch_number", ""))
     c2.metric("Дата загрузки", last_batch.get("upload_date", ""))
     c3.metric("Поставщик", last_batch.get("supplier_name", ""))
     c4.metric("Камней всего", last_batch.get("stones_count", 0))
-    c5.write("Комментарий")
-    c5.caption(last_batch.get("notes", "") or "not available")
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Общая сумма покупки", rub(last_batch.get("purchase_total_rub", 0)))
+    c6.metric("Аванс", rub(last_batch.get("purchase_advance_rub", 0)))
+    c7.metric("Долг", rub(last_batch.get("purchase_debt_rub", 0)))
+    c8.caption(f"Комментарий: {last_batch.get('notes', '') or 'not available'}")
 
     stones = load_stones()
     if stones.empty:
@@ -266,6 +295,11 @@ def render_product_pricing_placeholder():
     df = ensure_columns(df, view_cols)
     st.dataframe(df[view_cols], use_container_width=True)
 
+    if st.button("Далее", key="product_pricing_next_to_publish"):
+        st.session_state["product_management_menu"] = "Опубликовать"
+        st.session_state["product_management_view"] = "main"
+        st.rerun()
+
 
 def render_product_publish():
     st.markdown("### Опубликовать")
@@ -286,6 +320,11 @@ def render_product_publish():
         st.info("Нет публичных камней для распределения по section.")
 
     render_publish_tab()
+    st.caption("Кнопка Далее переводит к списку партий. Она не утверждает, что публикация уже выполнена.")
+    if st.button("Далее", key="product_publish_next_to_batches"):
+        st.session_state["product_management_menu"] = "Загруженные партии"
+        st.session_state["product_management_view"] = "main"
+        st.rerun()
 
 
 def render_product_batches():
@@ -309,9 +348,18 @@ def render_product_batches():
         result["статус"] = result["upload_confirmed"].astype(str).map(lambda value: "uploaded" if value.lower() in ["true", "1", "yes", "да"] else "draft")
     else:
         result["статус"] = "not available"
-    result = result.rename(columns={"upload_date": "дата", "supplier_name": "имя поставщика", "notes": "комментарий"})
+    result = result.rename(
+        columns={
+            "upload_date": "дата",
+            "supplier_name": "поставщик",
+            "notes": "комментарий",
+            "purchase_total_rub": "общая сумма покупки",
+            "purchase_advance_rub": "аванс",
+            "purchase_debt_rub": "долг",
+        }
+    )
 
-    cols = ["batch_number", "дата", "имя поставщика", "комментарий", "количество камней всего", "статус"]
+    cols = ["batch_number", "дата", "поставщик", "комментарий", "количество камней всего", "общая сумма покупки", "аванс", "долг", "статус"]
     result = ensure_columns(result, cols)
     st.dataframe(result[cols], use_container_width=True)
 
@@ -322,15 +370,6 @@ def render_product_edit_placeholder():
     st.write("- массовое опасное редактирование не включено;")
     st.write("- удаление, rollback и автоматическое изменение данных не добавлены;")
     st.write("- любые изменения данных требуют отдельного задания и проверки.")
-
-
-def batch_metadata(batch_number: str, batches: pd.DataFrame) -> dict:
-    if batches.empty or "batch_number" not in batches.columns:
-        return {}
-    rows = batches[batches["batch_number"].astype(str).eq(str(batch_number))]
-    if rows.empty:
-        return {}
-    return rows.iloc[0].to_dict()
 
 
 def detail_table(df: pd.DataFrame, date_column_name: str) -> pd.DataFrame:
@@ -347,6 +386,71 @@ def detail_table(df: pd.DataFrame, date_column_name: str) -> pd.DataFrame:
         return pd.DataFrame(columns=list(columns.values()))
     result = ensure_columns(df, list(columns.keys()))
     return result[list(columns.keys())].rename(columns=columns)
+
+
+def render_batch_finance(batch_number: str, meta: dict):
+    payments = load_batch_payments()
+    batch_payments = payments[payments["batch_number"].astype(str).eq(str(batch_number))].copy() if not payments.empty else pd.DataFrame()
+    paid_extra = float(pd.to_numeric(batch_payments["amount_rub"], errors="coerce").fillna(0).sum()) if not batch_payments.empty else 0.0
+    total = float(meta.get("purchase_total_rub", 0) or 0)
+    advance = float(meta.get("purchase_advance_rub", 0) or 0)
+    remaining = total - advance - paid_extra
+
+    st.markdown("#### Финансы партии")
+    f1, f2, f3, f4 = st.columns(4)
+    f1.metric("Общая сумма покупки", rub(total))
+    f2.metric("Аванс", rub(advance))
+    f3.metric("Дополнительные оплаты", rub(paid_extra))
+    f4.metric("Остаток", rub(remaining))
+
+    st.markdown("#### Оплаты")
+    if batch_payments.empty:
+        st.info("Дополнительных оплат пока нет.")
+    else:
+        st.dataframe(batch_payments, use_container_width=True)
+
+    with st.expander("Добавить оплату", expanded=False):
+        st.caption("Внутренняя оплата поставщику. Это не клиентская оплата, не checkout и не payment session.")
+        payment_date = st.date_input("Дата оплаты", value=date.today(), key=f"payment_date_{batch_number}")
+        amount = st.number_input("Сумма оплаты", min_value=0.0, value=0.0, step=1000.0, key=f"payment_amount_{batch_number}")
+        note = st.text_input("Комментарий / заметка", key=f"payment_note_{batch_number}")
+        if st.button("Сохранить оплату", key=f"payment_save_{batch_number}", disabled=amount <= 0):
+            add_batch_payment(batch_number, payment_date, amount, note, datetime.now().isoformat(timespec="seconds"))
+            write_admin_action(
+                action="batch_supplier_payment_add",
+                entity=str(batch_number),
+                rows_count=1,
+                source="product_management_batch_detail",
+                details=f"Internal supplier payment amount_rub={amount}; note={note}",
+            )
+            st.success("Оплата добавлена. Остаток будет пересчитан.")
+            st.rerun()
+
+
+def render_soft_remove(batch_number: str, batch_stones: pd.DataFrame):
+    st.markdown("#### Снять партию с продажи")
+    st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
+    confirm = st.checkbox("Подтверждаю снятие партии с продажи", key=f"remove_confirm_{batch_number}")
+    if st.button("Снять партию с продажи", key=f"remove_batch_{batch_number}", disabled=not confirm):
+        stones = load_stones()
+        if stones.empty or "batch_number" not in stones.columns:
+            st.error("Камни партии не найдены.")
+            return
+        mask = stones["batch_number"].astype(str).eq(str(batch_number))
+        affected = int(mask.sum())
+        stones.loc[mask, "show_in_catalog"] = False
+        stones.loc[mask, "is_mvp_eligible"] = False
+        stones.loc[mask, "current_status"] = "removed_from_sale"
+        save_stones(stones)
+        write_admin_action(
+            action="batch_soft_remove_from_sale",
+            entity=str(batch_number),
+            rows_count=affected,
+            source="product_management_batch_detail",
+            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale. Public site requires separate publish.",
+        )
+        st.success(f"Партия {batch_number} снята с продажи в Admin. Затронуто строк: {affected}. Для сайта нужен отдельный publish.")
+        st.rerun()
 
 
 def render_product_batch_detail(batch_number: str):
@@ -371,11 +475,13 @@ def render_product_batch_detail(batch_number: str):
     else:
         batch_stones = stones[stones["batch_number"].astype(str).eq(str(batch_number))].copy()
 
+    render_batch_finance(batch_number, meta)
+
     if not batch_stones.empty and "current_status" in batch_stones.columns:
         status = batch_stones["current_status"].astype(str).str.lower()
-        on_site = batch_stones[~status.isin(["sold", "removed", "unavailable", "hidden"])]
+        on_site = batch_stones[~status.isin(["sold", "removed", "removed_from_sale", "unavailable", "hidden"])]
         sold = batch_stones[status.eq("sold")]
-        removed = batch_stones[status.isin(["removed", "unavailable", "hidden"])]
+        removed = batch_stones[status.isin(["removed", "removed_from_sale", "unavailable", "hidden"])]
     else:
         on_site = batch_stones
         sold = pd.DataFrame()
@@ -391,6 +497,8 @@ def render_product_batch_detail(batch_number: str):
     with col3:
         st.markdown("#### Сняты с продажи")
         st.dataframe(detail_table(removed, "дата снятия с продажи"), use_container_width=True)
+
+    render_soft_remove(batch_number, batch_stones)
 
 
 def product_state_rows() -> tuple[pd.DataFrame, pd.DataFrame]:
