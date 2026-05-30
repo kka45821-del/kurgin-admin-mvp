@@ -26,11 +26,19 @@ ADMIN_MENU = [
         ],
     },
     {
+        "id": "product_management",
+        "title": "Управление товаром",
+        "icon": "📦",
+        "status": ACTIVE,
+        "description": "Отдельная рабочая зона: камни, загрузка, цена, публикация, партии и состояние.",
+        "items": [],
+    },
+    {
         "id": "catalog",
         "title": "Каталог",
         "icon": "💎",
         "status": ACTIVE,
-        "description": "Рабочая зона MVP: камни, импорт Excel, партии, preview, цены, статусы, разделы и публикация.",
+        "description": "Рабочая зона MVP: камни, импорт Excel, партии, preview, цены, статусы, разделы и публикация. Временно сохранено как fallback.",
         "items": [
             {"id": "catalog_all", "title": "Все камни", "status": ACTIVE, "description": "Рабочая таблица всех камней в системе."},
             {"id": "catalog_import", "title": "Импорт Excel", "status": ACTIVE, "description": "Загрузка Excel, диагностика листов, распознавание колонок и нормализация."},
@@ -172,45 +180,19 @@ ADMIN_MENU = [
         "description": "Видимость страниц, порядок, нижняя панель и внутренние ссылки.",
         "items": [
             {"id": "navigation_bottom", "title": "Bottom nav", "status": ACTIVE, "description": "KURGIN, Инструменты, Каталог, Избранное, Корзина, Профиль."},
-            {"id": "navigation_visibility", "title": "Page visibility", "status": ACTIVE, "description": "Включить, скрыть, future, admin only."},
-        ],
-    },
-    {
-        "id": "brand_ui",
-        "title": "Бренд / UI",
-        "icon": "🎨",
-        "status": STUB,
-        "description": "Будущие визуальные настройки. Финальный дизайн пока не включаем.",
-        "items": [
-            {"id": "brand_logo", "title": "Logo", "status": STUB, "description": "Логотип, favicon, SVG."},
-            {"id": "brand_typography", "title": "Typography", "status": STUB, "description": "Cinzel, Didot/Bodoni, Inter."},
-            {"id": "brand_theme", "title": "Theme", "status": STUB, "description": "Demo, grayscale, production."},
+            {"id": "navigation_links", "title": "Внутренние ссылки", "status": STUB, "description": "Связи между страницами."},
         ],
     },
     {
         "id": "settings",
         "title": "Настройки",
-        "icon": "🛠",
+        "icon": "⚙️",
         "status": ACTIVE,
-        "description": "App mode, feature flags, data sources, import/export и журнал действий.",
+        "description": "Режимы, публикация, audit log, роли админов и технические настройки.",
         "items": [
-            {"id": "settings_mode", "title": "App mode", "status": ACTIVE, "description": "Demo, staging, production."},
-            {"id": "settings_flags", "title": "Feature flags", "status": ACTIVE, "description": "Включить / скрыть Analyzer, Index, Academy, Specialists, Checkout."},
-            {"id": "settings_data_sources", "title": "Data sources", "status": ACTIVE, "description": "Local demo, external catalog, production catalog."},
-            {"id": "settings_import_export", "title": "Import / Export", "status": ACTIVE, "description": "Экспорт catalog.json, backup, restore."},
-            {"id": "settings_logs", "title": "Журнал действий", "status": ACTIVE, "description": "Минимальный журнал действий администратора."},
-        ],
-    },
-    {
-        "id": "security",
-        "title": "Безопасность",
-        "icon": "🔐",
-        "status": STUB,
-        "description": "Администраторы, права доступа и журнал действий.",
-        "items": [
-            {"id": "security_admins", "title": "Admin users", "status": STUB, "description": "Список администраторов."},
-            {"id": "security_permissions", "title": "Permissions", "status": STUB, "description": "Права на редактирование каталога, цен, публикации и пользователей."},
-            {"id": "security_audit", "title": "Audit trail", "status": STUB, "description": "Полный audit trail будет позже. Сейчас используется минимальный журнал действий."},
+            {"id": "settings_mode", "title": "MVP режим", "status": ACTIVE, "description": "Текущий режим работы."},
+            {"id": "settings_page_settings", "title": "Настройки страниц", "status": ACTIVE, "description": "Тексты и видимость публичных страниц."},
+            {"id": "settings_logs", "title": "Audit log", "status": ACTIVE, "description": "Журнал действий администратора."},
         ],
     },
 ]
@@ -222,18 +204,3 @@ def visible_sections():
 
 def visible_items(section: dict):
     return [item for item in section.get("items", []) if item.get("status") != HIDDEN]
-
-
-def find_section(section_id: str):
-    return next((section for section in ADMIN_MENU if section.get("id") == section_id), ADMIN_MENU[0])
-
-
-def find_item(section: dict, item_id: str | None):
-    items = visible_items(section)
-    if not items:
-        return None
-    if item_id:
-        found = next((item for item in items if item.get("id") == item_id), None)
-        if found:
-            return found
-    return items[0]
