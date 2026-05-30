@@ -2,9 +2,9 @@
 
 Repo: `kka45821-del/kurgin-admin-mvp`
 Scope: manual Admin import smoke checkpoint.
-Status: blocked manual runtime smoke / no implementation approval.
+Status: live import smoke completed / no production publish.
 
-This document records the attempted Admin import smoke checkpoint for live Admin open + controlled Excel import/preview without production publish.
+This document records the manual live Admin import smoke checkpoint for live Admin open + controlled Excel import/preview without production publish.
 
 Repositories not changed:
 
@@ -13,135 +13,145 @@ Repositories not changed:
 - `kurgin-score-analyzer`
 - `kurgin-formula-service`
 
-This checkpoint does not publish to `kurgin-data`, does not change Streamlit, does not change Analyzer, does not change formula/scoring, does not change data schema, does not perform cleanup, and does not deploy production.
+This checkpoint did not publish to `kurgin-data`, did not change Streamlit, did not change Analyzer, did not change formula/scoring, did not change data schema, did not perform cleanup, and did not deploy production.
 
 ## 1. Final verdict
 
 ```text
-BLOCKED
+PASS for live upload / diagnostics / preview / validation
+RISK for publish because publish was not tested
 ```
 
-Reason:
-
-- Live Admin app URL was not available in this task context.
-- Admin credentials / login session were not available in this task context.
-- An interactive browser upload session could not be completed from this checkpoint.
-- A controlled Excel fixture was not uploaded through the live Admin UI.
-- Production publish was intentionally not executed.
-
-This is not a source-level code blocker.
-
-It is a runtime/manual-smoke blocker:
+Operational verdict:
 
 ```text
-manual smoke requires live URL + credentials/session + controlled fixture + explicit operator action
+RISK
 ```
+
+Interpretation:
+
+- Live Admin app opened.
+- Controlled smoke Excel uploaded.
+- Admin import UI accepted the file.
+- Sheet diagnostics worked.
+- `KURGIN_Template` was detected.
+- Header row was found at row `1`.
+- Column recognition worked with `10` recognized columns and `9` unrecognized columns.
+- Raw preview and normalized preview were shown.
+- Validation worked.
+- Missing `report_number` produced a critical error.
+- `price_rub = 0` produced a warning.
+- Save batch remained blocked because a critical error exists.
+- Production publish was not executed.
+
+This confirms the live upload / diagnostics / preview / validation path.
+
+The remaining risk is publish, because publish was intentionally not tested in this smoke.
 
 ## 2. Required task vs actual execution
 
 | Required check | Execution status | Result |
 |---|---|---|
-| Open live Admin app | Not executed | BLOCKED |
-| Use small controlled Excel fixture/template | Not executed in live UI | BLOCKED |
-| Upload through Admin upload | Not executed | BLOCKED |
-| Confirm file accepted | Not confirmed | BLOCKED |
-| Confirm sheet diagnostics works | Source-level available, runtime not confirmed | RISK |
-| Confirm columns recognized | Source-level available, runtime not confirmed | RISK |
-| Confirm validation/preview works | Source-level available, runtime not confirmed | RISK |
-| Confirm critical/warning separation visible | Source-level available, runtime not confirmed | RISK |
-| Avoid production publish | Confirmed by task behavior | PASS |
+| Open live Admin app | Executed | PASS |
+| Use small controlled Excel fixture/template | Executed | PASS |
+| Upload through Admin upload | Executed | PASS |
+| Confirm file accepted | Confirmed | PASS |
+| Confirm sheet diagnostics works | Confirmed | PASS |
+| Confirm `KURGIN_Template` detected | Confirmed | PASS |
+| Confirm header row found | Confirmed: row `1` | PASS |
+| Confirm columns recognized | Confirmed: `10` recognized, `9` unrecognized | PASS |
+| Confirm raw preview shown | Confirmed | PASS |
+| Confirm normalized preview shown | Confirmed | PASS |
+| Confirm validation works | Confirmed | PASS |
+| Confirm missing `report_number` critical error | Confirmed | PASS |
+| Confirm `price_rub = 0` warning | Confirmed | PASS |
+| Confirm save blocked when critical error exists | Confirmed | PASS |
+| Avoid production publish | Confirmed | PASS |
 | Avoid code/UI/data/CI changes | Confirmed by task behavior | PASS |
 
-## 3. Source-level precheck
-
-Although the live smoke could not be completed, the Admin source still contains the expected import and preview components.
+## 3. Live smoke result
 
 ### 3.1. Admin app entry
 
-Source-level status:
-
-```text
-AVAILABLE
-```
-
-Observed source-level behavior:
-
-- `app.py` is the Streamlit Admin entrypoint.
-- It sets page config for `KURGIN Admin MVP`.
-- It imports Admin modules for auth, IO, batches, logs, upload, validation, pricing and publish.
-- It requires admin login before rendering the main app.
-- It routes catalog import to `render_upload_tab()`.
-
 Runtime status:
 
 ```text
-NOT VERIFIED
+PASS
 ```
 
-Reason:
+Confirmed:
 
-- no live Admin URL / login session was available for this checkpoint.
+- live Admin app opened;
+- Admin import path was reachable;
+- no production publish was needed for this smoke.
 
 ### 3.2. Excel upload / import flow
 
-Source-level status:
+Runtime status:
 
 ```text
-AVAILABLE
+PASS
 ```
 
-Observed source-level behavior:
+Confirmed:
 
-- `admin_upload.py` provides a downloadable Excel template.
-- It accepts `.xlsx` files.
-- It reads Excel sheets.
-- It performs sheet diagnostics.
-- It attempts header-row detection.
-- It detects recognized and unrecognized columns.
-- It renders raw Excel preview.
-- It normalizes rows into the Admin stone schema.
-- It renders normalized preview.
-- It runs validation before saving.
-- It requires explicit confirmation before saving the batch.
+- controlled smoke Excel was uploaded;
+- file was accepted by the Admin upload UI;
+- sheet diagnostics worked;
+- `KURGIN_Template` was detected;
+- header row was found at row `1`;
+- column recognition worked:
+  - recognized columns: `10`;
+  - unrecognized columns: `9`.
+
+Interpretation:
+
+```text
+Admin upload accepts the controlled fixture and exposes diagnostics/mapping feedback.
+```
+
+### 3.3. Raw / normalized preview
 
 Runtime status:
 
 ```text
-NOT VERIFIED
+PASS
 ```
 
-Reason:
+Confirmed:
 
-- no controlled fixture was uploaded through live Admin UI in this checkpoint.
+- raw preview was shown;
+- normalized preview was shown;
+- the UI allowed checking the imported rows before save/publish.
 
-### 3.3. Validation / preview
-
-Source-level status:
+Interpretation:
 
 ```text
-AVAILABLE
+Preview path is operational for the controlled smoke fixture.
 ```
 
-Observed source-level behavior:
-
-- critical fields are validated;
-- empty/wrong sheet can become critical error;
-- missing required fields become critical errors;
-- duplicate `stone_id` becomes critical error;
-- optional pricing and score issues are warnings in base validation;
-- upload flow adds stricter KURGIN Score gate for Round main/large stones;
-- critical errors block batch save;
-- warnings can be displayed without blocking all current-stage import paths.
+### 3.4. Validation / critical-warning separation
 
 Runtime status:
 
 ```text
-NOT VERIFIED
+PASS
 ```
 
-Reason:
+Confirmed:
 
-- no live fixture upload and preview interaction was completed.
+- validation worked;
+- row missing `report_number` produced a critical error;
+- `price_rub = 0` produced a warning;
+- critical/warning separation was visible;
+- save batch remained blocked because a critical error exists.
+
+Interpretation:
+
+```text
+Critical validation blocks save.
+Price missing / zero remains warning-level in this smoke.
+```
 
 ## 4. Production publish boundary
 
@@ -157,22 +167,36 @@ Explicitly not done:
 - no Streamlit data refresh;
 - no production deploy.
 
-This satisfies the no-publish boundary for this smoke attempt.
+This satisfies the no-publish boundary for this smoke.
+
+Publish verdict:
+
+```text
+RISK: not tested
+```
+
+Reason:
+
+- this smoke was intentionally limited to live Admin open + import/diagnostics/preview/validation;
+- production publish was out of scope and blocked.
 
 ## 5. Blockers
 
 ### 5.1. Runtime blockers
 
-| ID | Blocker | Impact | Required resolution |
+```text
+None for live upload / diagnostics / preview / validation path.
+```
+
+### 5.2. Remaining non-blocking limitation
+
+| ID | Limitation | Impact | Required future action |
 |---|---|---|---|
-| BLK-001 | Live Admin app URL not available in task context | Cannot open Admin app | Provide URL or run smoke manually by operator |
-| BLK-002 | Admin login/session not available in task context | Cannot access Admin upload UI | Provide credentials/session through approved secure process or run manually |
-| BLK-003 | Interactive upload could not be completed here | Cannot confirm file acceptance, diagnostics, mapping or preview at runtime | Run controlled live smoke with operator/browser |
-| BLK-004 | Controlled fixture was not uploaded live | Cannot mark import smoke PASS | Use a small approved `.xlsx` fixture in a separate smoke run |
+| LIM-001 | Publish was not tested | Cannot mark publish flow PASS from this smoke | Run separate controlled publish smoke only after explicit approval |
 
-### 5.2. No source-level code blocker found
+### 5.3. No source-level code blocker found
 
-No source-level issue was found that justifies automatic code changes under this task.
+No source-level issue was found that justifies code changes under this task.
 
 No fix was made.
 
@@ -180,59 +204,42 @@ No fix was made.
 
 | ID | Risk | Severity | Handling |
 |---|---|---:|---|
-| RISK-001 | Source-level import path exists, but runtime upload remains unverified. | Medium | Run live Admin upload smoke. |
-| RISK-002 | Admin import auto-marks MVP flags and relies on Publication Gate review. | Medium | Use controlled fixture and verify preview/gate before any save/publish workflow. |
-| RISK-003 | Critical/warning separation is source-visible but not runtime-confirmed. | Medium | Use fixture with one valid row and one controlled warning/critical row. |
-| RISK-004 | Publish must remain untouched during import smoke. | High | Do not enter Publication Gate publish action during this smoke. |
-| RISK-005 | Any later fixture creation must not alter production data. | Medium | Keep fixture local or in a separate approved test fixture path. |
+| RISK-001 | Publish remains untested. | Medium | Run controlled publish smoke only after explicit approval. |
+| RISK-002 | Admin import auto-marks MVP flags and relies on Publication Gate review. | Medium | Continue requiring preview/gate review before any save/publish workflow. |
+| RISK-003 | Unknown/unrecognized columns were present. | Low-medium | Keep them inactive unless explicitly mapped by a separate contract/task. |
+| RISK-004 | Save was blocked by critical error as expected, so save path with a clean fixture is not yet confirmed here. | Low-medium | Run a separate clean-fixture save smoke if needed, still without publish. |
+| RISK-005 | Production data must remain untouched during import-only smoke. | High | Keep publish blocked unless a separate publish-smoke task is approved. |
 
-## 7. Controlled fixture recommendation for next manual run
+## 7. Evidence summary
 
-A minimal future fixture should contain no production data and should be clearly marked as smoke-only.
+Manual live test evidence reported:
 
-Recommended rows:
-
-1. Valid Round row with all required fields and price omitted or zero.
-2. Row missing one critical field, such as `Report #`, to confirm critical error behavior.
-3. Row missing price only, to confirm warning/request-price behavior.
-4. Optional unknown column, to confirm it is visible as unrecognized and does not become active logic.
-
-Recommended fixture columns:
-
-- `stone_id`
-- `shape`
-- `carat`
-- `color`
-- `clarity`
-- `lab`
-- `report_number`
-- `price_rub`
-- `karo_score`
-- `measurements`
-- `current_status`
-- `show_in_catalog`
-- `is_mvp_eligible`
-- `has_lab_document`
-- `physically_received`
-- `checked_by_kurgin`
-- `upload_confirmed`
-
-The fixture should not be published to `kurgin-data` during this smoke.
+```text
+live Admin app opened
+smoke Excel uploaded
+sheet diagnostics worked
+KURGIN_Template detected
+header row found: 1
+10 columns recognized
+9 columns unrecognized
+raw/normalized preview shown
+validation worked
+row missing report_number produced critical error
+price_rub = 0 produced warning
+Save batch remained blocked because critical error exists
+production publish was NOT executed
+```
 
 ## 8. Allowed next actions
 
 Allowed next actions:
 
-1. Provide or confirm live Admin app URL.
-2. Run manual Admin login/open check.
-3. Prepare a small local `.xlsx` smoke fixture.
-4. Upload fixture through Admin upload UI.
-5. Verify sheet diagnostics.
-6. Verify recognized/unrecognized column table.
-7. Verify raw preview and normalized preview.
-8. Verify critical vs warning separation.
-9. Stop before publish.
-10. Update this document with runtime evidence and verdict.
+1. Keep this smoke result as live validation evidence for upload / diagnostics / preview / validation.
+2. Run a clean-fixture save smoke, if explicitly needed, without production publish.
+3. Run publish dry-run/manual download validation.
+4. Run controlled publish smoke with `GITHUB_TOKEN` only after explicit approval.
+5. Add or document a small smoke fixture path only if separately approved.
+6. Keep unrecognized columns inactive unless a separate mapping/contract update is approved.
 
 ## 9. Blocked actions
 
@@ -245,6 +252,7 @@ Blocked by this smoke task:
 - update `upload_batches.csv`;
 - data schema changes;
 - code changes without separate approval;
+- UI changes;
 - Streamlit changes;
 - Analyzer changes;
 - formula/scoring changes;
@@ -258,27 +266,41 @@ Blocked by this smoke task:
 
 ## 10. Acceptance checklist
 
-This document satisfies the checkpoint documentation task if:
+This document satisfies the smoke-result update task if:
 
-- `docs/KURGIN_ADMIN_IMPORT_SMOKE_V0_1.md` exists;
-- verdict is included: `BLOCKED`;
-- no production publish is performed;
-- no Streamlit changes are made;
-- no Analyzer changes are made;
-- no formula/scoring changes are made;
-- no data changes are made;
-- no production deploy is performed;
-- blockers are listed;
-- next manual actions are listed.
+- `docs/KURGIN_ADMIN_IMPORT_SMOKE_V0_1.md` is updated;
+- live Admin open is recorded;
+- smoke Excel upload is recorded;
+- sheet diagnostics result is recorded;
+- `KURGIN_Template` detection is recorded;
+- header row `1` is recorded;
+- `10` recognized and `9` unrecognized columns are recorded;
+- raw/normalized preview is recorded;
+- validation result is recorded;
+- missing `report_number` critical error is recorded;
+- `price_rub = 0` warning is recorded;
+- save blocked by critical error is recorded;
+- production publish not executed is recorded;
+- no code changes are made;
+- no UI changes are made;
+- no data/schema changes are made;
+- no Analyzer/formula/scoring changes are made.
 
 ## 11. Closure
 
-Final verdict:
+Final runtime result:
 
 ```text
-BLOCKED
+PASS for live upload / diagnostics / preview / validation
+RISK for publish because publish was not tested
 ```
 
-The manual live Admin import smoke could not be completed in this checkpoint because live Admin URL, login/session and interactive upload execution were not available.
+Operational document verdict remains:
 
-The current source-level import path remains available, but runtime PASS requires a separate manual smoke run with the live Admin app and a controlled `.xlsx` fixture.
+```text
+RISK
+```
+
+The manual live Admin import smoke confirms the upload, diagnostics, preview and validation path.
+
+Publish remains a separate untested path and must not be inferred as passed from this import-only smoke.
