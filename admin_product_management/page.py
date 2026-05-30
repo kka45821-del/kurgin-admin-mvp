@@ -23,6 +23,10 @@ def render_product_management_page():
 
     st.divider()
 
+    next_menu = st.session_state.pop("product_management_next_menu", None)
+    if next_menu in PRODUCT_MENU:
+        st.session_state["product_management_menu"] = next_menu
+
     if st.session_state.get("product_management_view") == "batch_detail":
         render_product_batch_detail(st.session_state.get("product_detail_batch", ""))
         return
