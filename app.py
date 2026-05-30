@@ -316,7 +316,7 @@ def render_product_management_page():
     left_title, right_title = st.columns([1, 4])
     with left_title:
         if st.button("← Назад", use_container_width=True):
-            st.session_state["admin_main_section_label"] = "◇ Обзор"
+            st.session_state["admin_return_dashboard"] = True
             st.rerun()
     with right_title:
         st.subheader("Управление товаром")
@@ -446,6 +446,9 @@ def render_page(section: dict, item: dict | None):
 st.title("KURGIN Admin MVP")
 st.caption("Одна закрытая админка: импорт Excel, каталог, preview, publication gate, настройки и audit log.")
 require_admin_login("login")
+
+if st.session_state.pop("admin_return_dashboard", False):
+    st.session_state["admin_main_section_label"] = "◇ Обзор"
 
 with st.sidebar:
     st.header("KURGIN Admin")
