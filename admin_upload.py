@@ -255,7 +255,7 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
         if show_next_to_pricing and st.session_state.get("product_management_last_batch"):
             st.success("Последняя сохранённая партия готова к шагу установки цены.")
             if st.button("Далее", key="product_upload_next_existing"):
-                st.session_state["product_management_menu"] = "Установить цену"
+                st.session_state["product_management_next_menu"] = "Установить цену"
                 st.session_state["product_management_view"] = "main"
                 st.rerun()
         return
@@ -360,6 +360,6 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
 
     if show_next_to_pricing and st.session_state.get("product_management_last_batch"):
         if st.button("Далее", key="product_upload_next_to_pricing"):
-            st.session_state["product_management_menu"] = "Установить цену"
+            st.session_state["product_management_next_menu"] = "Установить цену"
             st.session_state["product_management_view"] = "main"
             st.rerun()
