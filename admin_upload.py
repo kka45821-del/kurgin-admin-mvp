@@ -237,8 +237,14 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
     batch_number = st.text_input("Номер партии", value=next_batch_number())
     upload_date = st.date_input("Дата партии", value=date.today())
     supplier_name = st.text_input("Поставщик")
-    uploaded_file = st.file_uploader("Файл камней .xlsx", type=["xlsx"])
     notes = st.text_area("Заметка")
+
+    purchase_total = st.number_input("Общая сумма покупки", min_value=0.0, value=0.0, step=1000.0)
+    purchase_advance = st.number_input("Аванс", min_value=0.0, value=0.0, step=1000.0)
+    purchase_debt = float(purchase_total or 0) - float(purchase_advance or 0)
+    st.metric("Долг", f"{purchase_debt:,.0f} ₽".replace(",", " "))
+
+    uploaded_file = st.file_uploader("Файл камней .xlsx", type=["xlsx"])
     if allow_replace:
         mode = st.radio("Режим", ["Добавить к текущим", "Заменить весь каталог"], horizontal=True)
     else:
@@ -324,13 +330,21 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
         current = load_stones()
         result = pd.concat([current, normalized], ignore_index=True) if mode.startswith("Добавить") else normalized
         save_stones(result)
-        upsert_batch_log(batch_number.strip(), upload_date, supplier_name.strip(), len(normalized), notes)
+        upsert_batch_log(
+            batch_number.strip(),
+            upload_date,
+            supplier_name.strip(),
+            len(normalized),
+            notes,
+            purchase_total_rub=purchase_total,
+            purchase_advance_rub=purchase_advance,
+        )
         write_admin_action(
             action="import_excel_batch",
             entity=str(batch_number).strip(),
             rows_count=len(normalized),
             source="admin_upload",
-            details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}",
+            details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}; purchase_total_rub={purchase_total}; purchase_advance_rub={purchase_advance}; purchase_debt_rub={purchase_debt}",
         )
         st.session_state["product_management_last_batch"] = {
             "batch_number": str(batch_number).strip(),
@@ -338,6 +352,9 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
             "supplier_name": str(supplier_name).strip(),
             "notes": notes,
             "stones_count": int(len(normalized)),
+            "purchase_total_rub": float(purchase_total or 0),
+            "purchase_advance_rub": float(purchase_advance or 0),
+            "purchase_debt_rub": float(purchase_debt or 0),
         }
         st.success(f"Партия {batch_number} сохранена. Камней: {len(normalized)}")
 
