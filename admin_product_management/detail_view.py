@@ -5,6 +5,7 @@ import streamlit as st
 
 from admin_io import add_batch_payment, load_batches
 from admin_log import write_admin_action
+from admin_publish import publish_catalog_snapshot
 
 from .actions import archive_batch
 from .exports import batch_report_parts, detail_table, excel_bytes, render_table_download
@@ -51,11 +52,14 @@ def render_batch_finance(batch_number: str, meta: dict):
 
 
 def render_soft_remove(batch_number: str):
-    st.markdown("#### Снять партию с продажи")
-    st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
-    confirm = st.checkbox("Подтверждаю снятие партии с продажи", key=f"remove_confirm_{batch_number}")
-    if st.button("Снять партию с продажи", key=f"remove_batch_{batch_number}", disabled=not confirm):
-        affected, batch_marked = archive_batch(batch_number, note="removed from sale in admin")
+    st.markdown("#### Снять партию с сайта")
+    st.warning("Партия будет снята с продажи в админке и сразу убрана с публичного сайта через обновление catalog.json.")
+    confirm = st.checkbox(
+        "Подтверждаю снятие партии с сайта и публикацию нового catalog.json",
+        key=f"remove_confirm_{batch_number}",
+    )
+    if st.button("Снять партию с сайта", key=f"remove_batch_{batch_number}", disabled=not confirm):
+        affected, batch_marked = archive_batch(batch_number, note="removed from sale in admin and published")
         if not batch_marked:
             st.warning("Камни сняты с продажи, но строка партии в upload_batches.csv не найдена.")
 
@@ -67,11 +71,26 @@ def render_soft_remove(batch_number: str):
             details=(
                 "show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; "
                 "removed_from_sale_at=today for non-sold stones; batch_status=archived; "
-                "archived_at=today; archived_note=removed from sale in admin. Sold stones untouched. "
-                "Public site requires separate publish."
+                "archived_at=today; archived_note=removed from sale in admin and published. Sold stones untouched. "
+                "Auto publish catalog snapshot requested."
             ),
         )
-        st.success("Партия снята с продажи и перемещена в Архив. Публичный сайт изменится только после отдельной публикации.")
+
+        try:
+            result = publish_catalog_snapshot(
+                source="product_management_batch_detail",
+                details=f"after batch soft remove; batch_number={batch_number}; affected_stones={affected}",
+            )
+            st.success(
+                "Партия снята с продажи, перемещена в Архив и убрана с публичного сайта. "
+                f"В catalog.json осталось камней: {result.get('count', 0)}."
+            )
+        except Exception as exc:
+            st.error(
+                "Партия снята с продажи в админке, но сайт не удалось обновить автоматически. "
+                f"Ошибка публикации: {exc}"
+            )
+
         st.session_state["product_batch_detail_return_menu"] = "Архив"
         st.rerun()
 
