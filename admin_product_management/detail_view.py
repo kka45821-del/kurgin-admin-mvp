@@ -49,6 +49,20 @@ def render_batch_finance(batch_number: str, meta: dict):
             st.rerun()
 
 
+def _ensure_soft_remove_columns(stones: pd.DataFrame) -> pd.DataFrame:
+    result = stones.copy()
+    defaults = {
+        "show_in_catalog": True,
+        "is_mvp_eligible": True,
+        "current_status": "available",
+        "removed_from_sale_at": "",
+    }
+    for column, default in defaults.items():
+        if column not in result.columns:
+            result[column] = default
+    return result
+
+
 def render_soft_remove(batch_number: str):
     st.markdown("#### Снять партию с продажи")
     st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
@@ -58,14 +72,24 @@ def render_soft_remove(batch_number: str):
         if stones.empty or "batch_number" not in stones.columns:
             st.error("Камни партии не найдены.")
             return
+
+        stones = _ensure_soft_remove_columns(stones)
         batch_mask = stones["batch_number"].astype(str).eq(str(batch_number))
-        status = stones.get("current_status", pd.Series("", index=stones.index)).astype(str).str.lower()
-        active_mask = batch_mask & ~status.eq("sold")
-        affected = int(active_mask.sum())
-        stones.loc[active_mask, "show_in_catalog"] = False
-        stones.loc[active_mask, "is_mvp_eligible"] = False
-        stones.loc[active_mask, "current_status"] = "removed_from_sale"
-        stones.loc[active_mask, "removed_from_sale_at"] = date.today().isoformat()
+        status = stones["current_status"].fillna("").astype(str).str.strip().str.lower()
+        sold_mask = status.eq("sold")
+        active_mask = (batch_mask & ~sold_mask).reindex(stones.index, fill_value=False).fillna(False).astype(bool)
+        active_indexes = stones.index[active_mask]
+        affected = int(len(active_indexes))
+
+        if affected == 0:
+            st.warning("Нет активных камней для снятия с продажи.")
+            return
+
+        today = date.today().isoformat()
+        stones.loc[active_indexes, "show_in_catalog"] = False
+        stones.loc[active_indexes, "is_mvp_eligible"] = False
+        stones.loc[active_indexes, "current_status"] = "removed_from_sale"
+        stones.loc[active_indexes, "removed_from_sale_at"] = today
         save_stones(stones)
         write_admin_action(
             action="batch_soft_remove_from_sale",
