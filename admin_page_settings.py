@@ -73,20 +73,9 @@ def save_settings(data):
 
 def render_page_settings() -> None:
     st.subheader('Page settings')
-    st.caption('Настройки страниц, разделов каталога, фильтров, сортировок и публичного отображения цен.')
+    st.caption('Настройки страниц, разделов каталога, фильтров и сортировок. Управление публичными ценами вынесено в отдельный пункт меню «Управление ценами».')
 
     settings = load_settings()
-    commerce = settings.setdefault('commerce', {'public_prices_request_only': False})
-
-    st.markdown('### Публичное отображение цен')
-    commerce['public_prices_request_only'] = st.checkbox(
-        'Показывать все публичные цены как «по запросу»',
-        value=bool(commerce.get('public_prices_request_only', False)),
-        key='public_prices_request_only',
-    )
-    st.caption('Внутренние цены в админке и расчёты индекса не удаляются. Меняется только публичный вывод catalog.json.')
-    st.divider()
-
     tabs = st.tabs([label for _, label in PAGES])
 
     for tab, (key, label) in zip(tabs, PAGES):
