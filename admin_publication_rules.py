@@ -90,11 +90,11 @@ def public_reason_series(df: pd.DataFrame, sellable: pd.Series, checkout_enabled
     availability_confirmed = boolean_series(df['availability_confirmed']) if 'availability_confirmed' in df.columns else pd.Series(False, index=df.index)
 
     reason = pd.Series('request_price', index=df.index, dtype=object)
-    reason = reason.mask(price.le(0), 'price_missing')
+    reason = reason.mask(~availability_confirmed, 'availability_not_confirmed')
+    reason = reason.mask(~price_confirmed & price.gt(0), 'price_not_confirmed')
     reason = reason.mask(price_status.eq(''), 'price_status_missing')
     reason = reason.mask(price_status.isin({'needs_review', 'index_pending', 'index_suggested'}), 'price_needs_review')
-    reason = reason.mask(~price_confirmed & price.gt(0), 'price_not_confirmed')
-    reason = reason.mask(~availability_confirmed, 'availability_not_confirmed')
+    reason = reason.mask(price.le(0), 'price_missing')
     reason = reason.mask(sellable & ~checkout_enabled, 'checkout_not_enabled')
     reason = reason.mask(checkout_enabled, 'checkout_enabled')
     return reason
