@@ -2,21 +2,11 @@ import pandas as pd
 import streamlit as st
 
 from admin_io import load_batches, load_stones
+from admin_log import write_admin_action
 
+from .actions import ACTIVE_BATCH_STATUSES, active_batch_mask, archive_all_active_batches, normalized_batch_status
 from .exports import batch_report_parts, detail_table, excel_bytes
 from .helpers import ensure_columns, safe_name
-
-
-ACTIVE_BATCH_STATUSES = {"", "uploaded", "active", "draft"}
-ARCHIVE_BATCH_STATUSES = {"removed_from_sale", "archived"}
-
-
-def batch_status_label(row: pd.Series) -> str:
-    status = str(row.get("batch_status", "") or "").strip().lower()
-    if status:
-        return status
-    upload_confirmed = str(row.get("upload_confirmed", "") or "").strip().lower()
-    return "uploaded" if upload_confirmed in ["true", "1", "yes", "да"] else "draft"
 
 
 def normalize_batches_view(batches: pd.DataFrame, stones: pd.DataFrame) -> pd.DataFrame:
@@ -29,7 +19,7 @@ def normalize_batches_view(batches: pd.DataFrame, stones: pd.DataFrame) -> pd.Da
     result["batch_number"] = result["batch_number"].astype(str)
     result = result.merge(counts, on="batch_number", how="left")
     result["количество камней всего"] = result["количество камней всего"].fillna(result.get("stones_count", 0)).astype(int)
-    result["статус"] = result.apply(batch_status_label, axis=1)
+    result["статус"] = result.apply(normalized_batch_status, axis=1)
     result = result.rename(
         columns={
             "upload_date": "дата",
@@ -72,11 +62,30 @@ def render_batch_actions(result: pd.DataFrame, cols: list[str], key_prefix: str)
             if b.button("Подробнее", key=f"{key_prefix}_batches_detail_{batch_number}"):
                 st.session_state["product_management_view"] = "batch_detail"
                 st.session_state["product_detail_batch"] = batch_number
+                st.session_state["product_batch_detail_return_menu"] = "Загруженные партии"
                 st.rerun()
+
+
+def render_archive_all_button(active_count: int):
+    with st.expander("Dev-сброс активных партий", expanded=False):
+        st.warning("Действие переместит все активные партии в Архив. Public site не меняется без отдельной публикации.")
+        confirm = st.checkbox("Я понимаю, что все активные партии будут перемещены в Архив.", key="archive_all_confirm")
+        if st.button("Переместить все партии в Архив", disabled=not confirm or active_count == 0, key="archive_all_batches"):
+            affected_stones, affected_batches = archive_all_active_batches(note="dev cleanup archive all")
+            write_admin_action(
+                action="batch_archive_all",
+                entity="all_active_batches",
+                rows_count=affected_stones,
+                source="product_management_batches",
+                details=f"archived_batches={affected_batches}; non_sold_stones_removed_from_sale={affected_stones}; public site requires separate publish",
+            )
+            st.success("Все активные партии перемещены в Архив. Публичный сайт изменится только после отдельной публикации.")
+            st.rerun()
 
 
 def render_product_batches():
     st.markdown("### Загруженные партии")
+    st.caption("Здесь показываются только активные партии: пустой batch_status, uploaded, active или draft.")
     batches = load_batches()
     stones = load_stones()
     if batches.empty:
@@ -87,11 +96,8 @@ def render_product_batches():
     cols = ["batch_number", "дата", "поставщик", "комментарий", "количество камней всего", "общая сумма покупки", "аванс", "долг", "статус"]
     result = ensure_columns(result, cols)
 
-    status_key = result["статус"].fillna("").astype(str).str.strip().str.lower()
-    active = result[status_key.isin(ACTIVE_BATCH_STATUSES)].copy()
-    archived = result[status_key.isin(ARCHIVE_BATCH_STATUSES)].copy()
+    active = result[result["статус"].fillna("").astype(str).str.strip().str.lower().isin(ACTIVE_BATCH_STATUSES)].copy()
 
-    st.markdown("#### Активные / загруженные партии")
     if active.empty:
         st.info("Активных загруженных партий нет.")
     else:
@@ -99,10 +105,4 @@ def render_product_batches():
         st.markdown("#### Действия по активным партиям")
         render_batch_actions(active, cols, "active")
 
-    st.markdown("#### Снятые с продажи / Архив")
-    if archived.empty:
-        st.info("Снятых с продажи или архивных партий нет.")
-    else:
-        st.dataframe(archived[cols], use_container_width=True)
-        st.markdown("#### Действия по архивным партиям")
-        render_batch_actions(archived, cols, "archive")
+    render_archive_all_button(len(active))
