@@ -14,6 +14,11 @@ PUBLIC_FLAG_COLUMNS = [
 PUBLIC_ALLOWED_STATUS = 'available'
 VISIBLE_WITHOUT_PRICE_STATUSES = {'missing', 'index_pending', 'index_suggested', 'needs_review', 'request_price'}
 SELLABLE_PRICE_STATUSES = {'confirmed', 'final', 'manual_confirmed', 'approved', 'index_confirmed'}
+PUBLIC_PRICE_COLUMNS = [
+    'price_rub', 'site_price_rub', 'client_mode_price_rub', 'jeweler_price_rub',
+    'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub',
+    'calculated_price_rub', 'raw_calculated_price_rub', 'supplier_rate', 'supplier_total',
+]
 CHECKOUT_FEATURE_ENABLED = False
 
 
@@ -99,6 +104,14 @@ def public_reason_series(df: pd.DataFrame, sellable: pd.Series, checkout_enabled
     return reason
 
 
+def mask_public_prices_for_request(df: pd.DataFrame, mask: pd.Series) -> pd.DataFrame:
+    result = df.copy()
+    for col in PUBLIC_PRICE_COLUMNS:
+        if col in result.columns:
+            result.loc[mask, col] = 0
+    return result
+
+
 def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -119,6 +132,7 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     result.loc[sellable & ~checkout_enabled & ~request_only_mode, 'public_state'] = 'sellable_contact'
     result.loc[checkout_enabled, 'public_state'] = 'checkout'
     result['public_reason'] = public_reason_series(result, sellable, checkout_enabled, request_only_mode)
+    result = mask_public_prices_for_request(result, is_request_price)
     return result
 
 
