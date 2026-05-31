@@ -3,8 +3,8 @@ import streamlit as st
 
 from admin_auth import logout_button, require_admin_login
 from admin_batches import render_batches_tab
-from admin_io import load_batches, load_stones, save_stones
-from admin_log import load_admin_actions, write_admin_action
+from admin_io import load_batches, load_stones
+from admin_log import load_admin_actions
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
 from admin_page_settings import render_page_settings
 from admin_pricing import render_pricing_tab
@@ -95,12 +95,12 @@ def render_catalog_page(item: dict | None):
 
     if item_id == "catalog_all":
         df = load_stones()
-        st.caption("Рабочая таблица каталога. Массово редактируй только понятные поля.")
-        edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-        if st.button("Сохранить каталог", type="primary"):
-            save_stones(edited)
-            write_admin_action("catalog_save", "stones.csv", len(edited), "app.catalog_all", details="Ручное сохранение таблицы каталога")
-            st.success("Каталог сохранён")
+        st.warning(
+            "Legacy / fallback view. Основной рабочий контур: Управление товаром. "
+            "Ручное массовое сохранение через старый Каталог отключено."
+        )
+        st.caption("Read-only диагностика stones.csv. Для рабочих операций используйте Управление товаром.")
+        st.dataframe(df, use_container_width=True)
         return
 
     if item_id == "catalog_import":
