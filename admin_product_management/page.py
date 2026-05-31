@@ -1,5 +1,6 @@
 import streamlit as st
 
+from .archive_view import render_product_archive
 from .batches_view import render_product_batches
 from .detail_view import render_product_batch_detail
 from .navigation import PRODUCT_MENU
@@ -43,6 +44,8 @@ def render_product_management_page():
             render_product_publish()
         elif selected == "Загруженные партии":
             render_product_batches()
+        elif selected == "Архив":
+            render_product_archive()
         elif selected == "Редактирование":
             render_product_edit_placeholder()
         elif selected == "Состояние":
