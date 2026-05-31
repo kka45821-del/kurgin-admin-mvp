@@ -6,6 +6,7 @@ from admin_io import load_batches, load_stones
 from admin_log import load_admin_actions
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
 from admin_page_settings import render_page_settings
+from admin_price_management import render_price_management_page
 from admin_product_management import render_product_management_page
 from admin_publication_rules import public_preview, publication_summary
 from admin_validation import validate_catalog
@@ -83,7 +84,7 @@ def render_dashboard():
         st.dataframe(warnings, use_container_width=True)
 
     st.markdown("### Быстрые действия")
-    st.write("Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии")
+    st.write("Управление ценами → Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии")
 
 
 def render_settings_page(item: dict | None):
@@ -99,6 +100,10 @@ def render_settings_page(item: dict | None):
 
 def render_active_page(section: dict, item: dict | None):
     section_id = section.get("id")
+    if section_id == "price_management":
+        render_header(section, item)
+        render_price_management_page()
+        return
     if section_id == "product_management":
         render_product_management_page()
         return
@@ -131,7 +136,7 @@ def render_page(section: dict, item: dict | None):
 
 
 st.title("KURGIN Admin MVP")
-st.caption("Одна закрытая админка: Управление товаром, preview, publication gate, настройки и audit log.")
+st.caption("Одна закрытая админка: управление ценами, товаром, preview, publication gate, настройки и audit log.")
 require_admin_login("login")
 
 if st.session_state.pop("admin_return_dashboard", False):

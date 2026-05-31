@@ -20,6 +20,9 @@ PAGES = [
 
 def default_settings():
     return {
+        'commerce': {
+            'public_prices_request_only': False,
+        },
         'pages': {key: {'visible': True, 'title': label, 'subtitle': '', 'text': '', 'cta': ''} for key, label in PAGES},
         'catalog_sections': [
             {'key': 'all', 'label': 'Все камни', 'visible': True, 'order': 5},
@@ -56,6 +59,9 @@ def load_settings():
         base = default_settings()
         for key, value in base.items():
             data.setdefault(key, value)
+        if not isinstance(data.get('commerce'), dict):
+            data['commerce'] = base['commerce']
+        data['commerce'].setdefault('public_prices_request_only', False)
         return data
     return default_settings()
 
@@ -67,7 +73,7 @@ def save_settings(data):
 
 def render_page_settings() -> None:
     st.subheader('Page settings')
-    st.caption('Настройки страниц, разделов каталога, фильтров и сортировок. Сейчас это внутренний admin-каркас; публичный сайт подключается отдельно.')
+    st.caption('Настройки страниц, разделов каталога, фильтров и сортировок. Управление публичными ценами вынесено в отдельный пункт меню «Управление ценами».')
 
     settings = load_settings()
     tabs = st.tabs([label for _, label in PAGES])
