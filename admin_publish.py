@@ -30,6 +30,9 @@ PUBLIC_COMPUTED_FIELDS = [
     'public_sellable',
     'checkout_enabled',
     'public_action',
+    'is_request_price',
+    'public_state',
+    'public_reason',
 ]
 
 IMPORTANT_CATALOG_FIELDS = [
@@ -184,6 +187,15 @@ def _section_for_row(row: pd.Series) -> str:
     return 'large'
 
 
+def _display_price_text(stone: dict) -> str:
+    if _bool_value(stone.get('is_request_price')) or stone.get('public_action') == 'request_price':
+        return 'по запросу'
+    price = stone.get('price') or stone.get('price_rub') or stone.get('public_price_rub')
+    if price in [None, 0, '0', '']:
+        return 'по запросу'
+    return str(price)
+
+
 def _stone_from_row(row: pd.Series) -> dict:
     stone = {}
     for col in STONE_COLS:
@@ -200,7 +212,7 @@ def _stone_from_row(row: pd.Series) -> dict:
 
     stone['karo_score'] = stone.get('karo_score')
     stone['KURGIN Score'] = stone.get('kurgin_score')
-    stone['priceText'] = '' if stone.get('price') in [None, 0, '0'] else str(stone.get('price'))
+    stone['priceText'] = _display_price_text(stone)
 
     return stone
 
@@ -213,11 +225,13 @@ def _catalog_payload(df: pd.DataFrame) -> str:
         'updated_at': pd.Timestamp.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
         'count': len(stones),
         'schema': {
-            'version': 'catalog_mvp_v2',
+            'version': 'catalog_mvp_v3',
             'score_public_name': 'KURGIN Score',
             'score_field': 'karo_score',
             'includes_full_catalog_fields': True,
             'section_autofill': True,
+            'public_state_fields': ['public_visible', 'public_sellable', 'checkout_enabled', 'public_action', 'is_request_price', 'public_state', 'public_reason'],
+            'internal_csv_published': False,
         },
         'stones': stones,
     }
@@ -250,8 +264,8 @@ def _section_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_publish_tab() -> None:
-    st.subheader('Опубликовать catalog.json в kurgin-data')
-    st.caption('Публикуем только данные. Публичный сайт и его дизайн не меняем.')
+    st.subheader('Опубликовать публичный catalog.json в kurgin-data')
+    st.caption('Публикуем только публичные JSON-данные. Внутренние CSV не публикуются наружу.')
 
     stones = load_stones()
     batches = load_batches()
@@ -263,6 +277,11 @@ def render_publish_tab() -> None:
     st.metric('Публичных камней для catalog.json', len(public))
     st.metric('Партий', len(batches))
 
+    if 'public_state' in public.columns:
+        with st.expander('Состояния перед публикацией', expanded=True):
+            state_summary = public['public_state'].fillna('unknown').astype(str).value_counts().rename_axis('public_state').reset_index(name='count')
+            st.dataframe(state_summary, use_container_width=True)
+
     st.write('Preview публичных камней')
     st.dataframe(public.head(20), use_container_width=True)
 
@@ -273,26 +292,24 @@ def render_publish_tab() -> None:
         st.dataframe(_field_coverage(public), use_container_width=True)
 
     st.download_button('Скачать catalog.json', catalog_json, file_name='catalog.json')
-    st.download_button('Скачать stones.csv', _df_to_csv(stones, STONE_COLS), file_name='stones.csv')
-    st.download_button('Скачать upload_batches.csv', _df_to_csv(batches, BATCH_COLS), file_name='upload_batches.csv')
+    st.download_button('Скачать stones.csv для внутренней проверки', _df_to_csv(stones, STONE_COLS), file_name='stones.csv')
+    st.download_button('Скачать upload_batches.csv для внутренней проверки', _df_to_csv(batches, BATCH_COLS), file_name='upload_batches.csv')
 
     token = _token()
     if not token:
         st.warning('Автопубликация требует Streamlit secret GITHUB_TOKEN. Пока можно скачать catalog.json и загрузить его в kurgin-data вручную.')
         return
 
-    confirm = st.checkbox('Подтверждаю публикацию catalog.json в kurgin-data')
-    if st.button('Опубликовать catalog.json', type='primary', disabled=not confirm):
+    confirm = st.checkbox('Подтверждаю публикацию публичного catalog.json в kurgin-data')
+    if st.button('Опубликовать публичный catalog.json', type='primary', disabled=not confirm):
         failed_step = ''
         status_box = st.empty()
         status_box.info('Публикация началась')
         steps_box = st.container()
 
         publish_steps = [
-            ('1/4 catalog.json', lambda: _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)),
-            ('2/4 data/catalog.json', lambda: _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)),
-            ('3/4 stones.csv', lambda: _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)),
-            ('4/4 upload_batches.csv', lambda: _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)),
+            ('1/2 catalog.json', lambda: _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)),
+            ('2/2 data/catalog.json', lambda: _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)),
         ]
 
         try:
@@ -313,7 +330,7 @@ def render_publish_tab() -> None:
                 source='admin_publish',
                 result='success',
                 details=(
-                    'Опубликованы catalog.json, data/catalog.json, stones.csv, upload_batches.csv; '
+                    'Опубликованы catalog.json и data/catalog.json; внутренние CSV не публиковались; '
                     f'updated_at={updated_at}; count={count}'
                 ),
             )
@@ -332,9 +349,9 @@ def render_publish_tab() -> None:
             status_box.error('Публикация остановлена')
             st.error(f'Ошибка публикации на шаге {failed_step}: HTTP Error {exc.code}: {exc.reason}')
             if exc.code == 409:
-                st.warning('GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
+                st.info('GitHub сообщил о конфликте версии файла. Повторите публикацию — админка заново запросит актуальный SHA.')
         except Exception as exc:
-            details = f'failed_step={failed_step}; {exc}'
+            details = f'failed_step={failed_step}; {type(exc).__name__}: {exc}'
             write_admin_action(
                 action='publish_catalog_json',
                 entity='kurgin-data/catalog.json',
