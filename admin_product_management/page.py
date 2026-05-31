@@ -27,13 +27,17 @@ def render_product_management_page():
     st.subheader("Управление товаром")
     st.caption(
         "Главная рабочая зона админки: камни, загрузка по фиксированному Excel-шаблону, "
-        "партии, статусы, формирование цены, public preview и публикация."
+        "партии, статусы, формирование цены, публичный предпросмотр и публикация."
     )
 
     st.warning("Этот раздел не создаёт checkout, payment, reserve, order, Verify или PDF/report.")
     st.divider()
 
     next_menu = st.session_state.pop("product_management_next_menu", None)
+    if next_menu == "Publication Gate":
+        next_menu = "Публикация"
+    if next_menu == "Публичный preview":
+        next_menu = "Публичный предпросмотр"
     if next_menu in PRODUCT_MENU:
         st.session_state["product_management_menu"] = next_menu
 
@@ -49,7 +53,7 @@ def render_product_management_page():
             render_product_upload()
         elif selected in {"Установить цену", "Формирование цены"}:
             render_product_pricing_placeholder()
-        elif selected == "Publication Gate":
+        elif selected in {"Публикация", "Publication Gate"}:
             render_product_publish()
         elif selected in {"Загруженные партии", "Партии"}:
             render_product_batches()
@@ -61,7 +65,7 @@ def render_product_management_page():
             render_product_state()
         elif selected == "Все камни":
             render_product_all_stones()
-        elif selected == "Публичный preview":
+        elif selected in {"Публичный предпросмотр", "Публичный preview"}:
             render_product_public_preview()
         elif selected == "Разделы витрины":
             render_product_showcase_sections()
