@@ -6,6 +6,7 @@ from admin_integrity import build_integrity_report, integrity_summary
 from admin_io import load_batches, load_stones
 from admin_log import load_admin_actions
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
+from admin_other_sections import render_other_sections_page
 from admin_page_settings import render_page_settings
 from admin_price_management import render_price_management_page
 from admin_product_management import render_product_management_page
@@ -98,7 +99,7 @@ def render_dashboard():
         st.dataframe(integrity_report, use_container_width=True)
 
     st.markdown("### Быстрые действия")
-    st.write("Управление ценами → Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии → Синхронизация сайта")
+    st.write("Управление ценами → Управление товаром / Другие разделы → Публичный preview → Publication Gate → Синхронизация сайта")
 
 
 def render_settings_page(item: dict | None):
@@ -120,6 +121,10 @@ def render_active_page(section: dict, item: dict | None):
         return
     if section_id == "product_management":
         render_product_management_page()
+        return
+    if section_id == "other_sections":
+        render_header(section, item)
+        render_other_sections_page()
         return
     if section_id == "site_sync":
         render_header(section, item)
@@ -154,7 +159,7 @@ def render_page(section: dict, item: dict | None):
 
 
 st.title("KURGIN Admin MVP")
-st.caption("Одна закрытая админка: управление ценами, товаром, синхронизацией сайта, preview, publication gate, настройки и audit log.")
+st.caption("Одна закрытая админка: управление ценами, товаром, другими разделами, синхронизацией сайта, preview, publication gate, настройки и audit log.")
 require_admin_login("login")
 
 if st.session_state.pop("admin_return_dashboard", False):
