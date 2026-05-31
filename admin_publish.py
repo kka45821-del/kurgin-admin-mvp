@@ -249,6 +249,58 @@ def _section_summary(df: pd.DataFrame) -> pd.DataFrame:
     return calculated.value_counts().rename_axis('section').reset_index(name='count')
 
 
+def publish_catalog_snapshot(source: str, details: str = '') -> dict:
+    """Publish the current Admin catalog snapshot to kurgin-data.
+
+    Used after admin-side removal/deletion so the public site receives the
+    updated catalog without a separate manual publish step.
+    """
+    token = _token()
+    if not token:
+        raise RuntimeError('GITHUB_TOKEN не задан. Нельзя автоматически обновить сайт.')
+
+    stones = load_stones()
+    batches = load_batches()
+    public = public_preview(stones)
+    catalog_json = _catalog_payload(stones)
+    catalog_payload = json.loads(catalog_json)
+
+    publish_steps = [
+        ('catalog.json', lambda: _publish_file(DATA_REPO, 'catalog.json', catalog_json, f'Publish catalog.json from {source}', token)),
+        ('data/catalog.json', lambda: _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, f'Publish data/catalog.json from {source}', token)),
+        ('stones.csv', lambda: _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), f'Publish stones.csv from {source}', token)),
+        ('upload_batches.csv', lambda: _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), f'Publish upload_batches.csv from {source}', token)),
+    ]
+
+    failed_step = ''
+    try:
+        for step_label, publish_action in publish_steps:
+            failed_step = step_label
+            publish_action()
+    except Exception as exc:
+        write_admin_action(
+            action='publish_catalog_json',
+            entity='kurgin-data/catalog.json',
+            rows_count=len(public),
+            source=source,
+            result='error',
+            details=f'auto publish failed_step={failed_step}; {details}; error={exc}',
+        )
+        raise
+
+    updated_at = catalog_payload.get('updated_at', '')
+    count = catalog_payload.get('count', 0)
+    write_admin_action(
+        action='publish_catalog_json',
+        entity='kurgin-data/catalog.json',
+        rows_count=len(public),
+        source=source,
+        result='success',
+        details=f'auto publish after admin change; updated_at={updated_at}; count={count}; {details}',
+    )
+    return {'updated_at': updated_at, 'count': count}
+
+
 def render_publish_tab() -> None:
     st.subheader('Опубликовать catalog.json в kurgin-data')
     st.caption('Публикуем только данные. Публичный сайт и его дизайн не меняем.')
@@ -283,65 +335,18 @@ def render_publish_tab() -> None:
 
     confirm = st.checkbox('Подтверждаю публикацию catalog.json в kurgin-data')
     if st.button('Опубликовать catalog.json', type='primary', disabled=not confirm):
-        failed_step = ''
         status_box = st.empty()
         status_box.info('Публикация началась')
-        steps_box = st.container()
-
-        publish_steps = [
-            ('1/4 catalog.json', lambda: _publish_file(DATA_REPO, 'catalog.json', catalog_json, 'Publish catalog.json from admin', token)),
-            ('2/4 data/catalog.json', lambda: _publish_file(DATA_REPO, 'data/catalog.json', catalog_json, 'Publish data/catalog.json from admin', token)),
-            ('3/4 stones.csv', lambda: _publish_file(DATA_REPO, 'stones.csv', _df_to_csv(stones, STONE_COLS), 'Publish stones.csv from admin', token)),
-            ('4/4 upload_batches.csv', lambda: _publish_file(DATA_REPO, 'upload_batches.csv', _df_to_csv(batches, BATCH_COLS), 'Publish upload_batches.csv from admin', token)),
-        ]
-
         try:
-            with steps_box:
-                for step_label, publish_action in publish_steps:
-                    failed_step = step_label
-                    st.write(step_label)
-                    publish_action()
-                    st.success(f'{step_label} опубликован')
-
+            result = publish_catalog_snapshot(source='admin_publish', details='manual publish button')
             status_box.success('Публикация завершена')
-            updated_at = catalog_payload.get('updated_at', '')
-            count = catalog_payload.get('count', 0)
-            write_admin_action(
-                action='publish_catalog_json',
-                entity='kurgin-data/catalog.json',
-                rows_count=len(public),
-                source='admin_publish',
-                result='success',
-                details=(
-                    'Опубликованы catalog.json, data/catalog.json, stones.csv, upload_batches.csv; '
-                    f'updated_at={updated_at}; count={count}'
-                ),
-            )
             st.success('catalog.json опубликован')
-            st.info(f'updated_at: {updated_at}\n\ncount: {count}')
+            st.info(f"updated_at: {result.get('updated_at', '')}\n\ncount: {result.get('count', 0)}")
         except urllib.error.HTTPError as exc:
-            details = f'failed_step={failed_step}; HTTP Error {exc.code}: {exc.reason}'
-            write_admin_action(
-                action='publish_catalog_json',
-                entity='kurgin-data/catalog.json',
-                rows_count=len(public),
-                source='admin_publish',
-                result='error',
-                details=details,
-            )
             status_box.error('Публикация остановлена')
-            st.error(f'Ошибка публикации на шаге {failed_step}: HTTP Error {exc.code}: {exc.reason}')
+            st.error(f'Ошибка публикации: HTTP Error {exc.code}: {exc.reason}')
             if exc.code == 409:
                 st.warning('GitHub вернул 409 Conflict. Нажми кнопку публикации ещё раз через 10 секунд. Код повторно запрашивает свежий SHA файла, поэтому повтор обычно проходит.')
         except Exception as exc:
-            details = f'failed_step={failed_step}; {exc}'
-            write_admin_action(
-                action='publish_catalog_json',
-                entity='kurgin-data/catalog.json',
-                rows_count=len(public),
-                source='admin_publish',
-                result='error',
-                details=details,
-            )
             status_box.error('Публикация остановлена')
-            st.error(f'Ошибка публикации на шаге {failed_step}: {exc}')
+            st.error(f'Ошибка публикации: {exc}')
