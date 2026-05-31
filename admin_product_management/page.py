@@ -8,12 +8,19 @@ from .pricing_flow import render_product_pricing_placeholder
 from .publish_flow import render_product_publish
 from .sections import (
     render_product_all_stones,
-    render_product_edit_placeholder,
     render_product_public_preview,
     render_product_showcase_sections,
 )
 from .state_view import render_product_state
 from .upload_flow import render_product_upload
+
+
+def render_product_edit_placeholder():
+    st.markdown("### Редактирование")
+    st.info("Здесь позже будет безопасное редактирование камней, партий и статусов.")
+    st.write("- массовое опасное редактирование не включено;")
+    st.write("- удаление, rollback и автоматическое изменение данных не добавлены;")
+    st.write("- любые изменения данных требуют отдельного задания и проверки.")
 
 
 def render_product_management_page():
