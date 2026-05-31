@@ -44,17 +44,25 @@ def render_product_pricing_placeholder():
         st.warning("Партия сохранена в session state, но строки этой партии не найдены в текущем Admin catalog.")
         return
 
-    price = number_series(df["price_rub"]) if "price_rub" in df.columns else pd.Series(0, index=df.index)
+    for col in ["site_price_rub", "client_mode_price_rub", "jeweler_price_rub"]:
+        if col not in df.columns:
+            df[col] = 0
+
+    site_price = number_series(df["site_price_rub"])
+    legacy_price = number_series(df["price_rub"]) if "price_rub" in df.columns else pd.Series(0, index=df.index)
+    site_price = site_price.mask(site_price.le(0) & legacy_price.gt(0), legacy_price)
+    client_price = number_series(df["client_mode_price_rub"])
+    jeweler_price = number_series(df["jeweler_price_rub"])
     price_status = df["price_status"].astype(str).str.strip().str.lower() if "price_status" in df.columns else pd.Series("", index=df.index)
     price_confirmed = bool_series(df["price_confirmed"]) if "price_confirmed" in df.columns else pd.Series(False, index=df.index)
     availability_confirmed = bool_series(df["availability_confirmed"]) if "availability_confirmed" in df.columns else pd.Series(False, index=df.index)
 
-    df["price_missing"] = price.le(0)
+    df["price_missing"] = site_price.le(0)
     df["needs_review"] = df["price_missing"] | price_status.isin(["", "missing", "needs_review", "index_pending", "index_suggested"])
-    df["ready_for_publish"] = price.gt(0) & price_confirmed & availability_confirmed
-    df["цена на сайте"] = price
-    df["цена в режиме клиента"] = "not available"
-    df["цена для ювелира"] = "not available"
+    df["ready_for_publish"] = site_price.gt(0) & price_confirmed & availability_confirmed
+    df["цена на сайте"] = site_price
+    df["цена в режиме клиента"] = client_price
+    df["цена для ювелира"] = jeweler_price
 
     view_cols = [
         "stone_id",
@@ -66,6 +74,9 @@ def render_product_pricing_placeholder():
         "lab",
         "report_number",
         "price_rub",
+        "site_price_rub",
+        "client_mode_price_rub",
+        "jeweler_price_rub",
         "цена на сайте",
         "цена в режиме клиента",
         "цена для ювелира",
