@@ -40,4 +40,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest tests/test_admin_pricing_rules.py tests/test_publication_rules.py tests/test_admin_integrity.py tests/test_admin_section_policy.py
+          pytest tests/test_admin_pricing_rules.py tests/test_publication_rules.py tests/test_admin_integrity.py tests/test_admin_section_policy.py tests/test_admin_price_index.py
