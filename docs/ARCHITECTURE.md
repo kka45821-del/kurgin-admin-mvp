@@ -1,13 +1,18 @@
-# KURGIN Admin MVP architecture
+# Architecture
 
-This admin remains a single Streamlit app entrypoint: `app.py`.
+```text
+cvdlab.ru        public UI and cabinets
+admin.cvdlab.ru  Streamlit Admin UI
+api.cvdlab.ru    FastAPI backend
+PostgreSQL       source of truth
+```
 
-The working MVP should keep Streamlit as a UI shell only. Business decisions must move gradually into separated modules:
+Rules:
 
-- `domain/` — business objects and rules
-- `application/` — use cases
-- `infrastructure/` — storage and external services
-- `ui/` — Streamlit pages and components
-- `tests/` — safety checks
-
-Current working import and publication flows must not be broken while the skeleton is introduced.
+1. Streamlit is UI only.
+2. PostgreSQL is source of truth.
+3. Public data exits only through allowlist snapshots.
+4. Public Index is ₽/ct benchmark, not stone price or offer.
+5. All purchases go through cart/order.
+6. Client mode displays client display price; checkout uses specialist purchase price.
+7. Partners see batches only through explicit access.
