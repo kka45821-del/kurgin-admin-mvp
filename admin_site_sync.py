@@ -80,11 +80,12 @@ def _empty_catalog_payload() -> str:
         "updated_at": pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "count": 0,
         "schema": {
-            "version": "catalog_mvp_v2",
+            "version": "catalog_mvp_v3",
             "score_public_name": "KURGIN Score",
             "score_field": "karo_score",
             "includes_full_catalog_fields": True,
             "section_autofill": True,
+            "empty_snapshot": True,
         },
         "stones": [],
     }
@@ -192,6 +193,8 @@ def clear_public_site_snapshot(source: str = "admin_site_sync", details: str = "
     empty_batches_csv = _df_to_csv(pd.DataFrame(columns=BATCH_COLS), BATCH_COLS)
     steps = [
         ("catalog.json", lambda: _publish_file(DATA_REPO, "catalog.json", empty_catalog, f"Clear catalog.json from {source}", token)),
+        ("stones.json", lambda: _publish_file(DATA_REPO, "stones.json", empty_catalog, f"Clear stones.json from {source}", token)),
+        ("catalog_published.json", lambda: _publish_file(DATA_REPO, "catalog_published.json", empty_catalog, f"Clear catalog_published.json from {source}", token)),
         ("data/catalog.json", lambda: _publish_file(DATA_REPO, "data/catalog.json", empty_catalog, f"Clear data/catalog.json from {source}", token)),
         ("stones.csv", lambda: _publish_file(DATA_REPO, "stones.csv", empty_stones_csv, f"Clear stones.csv from {source}", token)),
         ("upload_batches.csv", lambda: _publish_file(DATA_REPO, "upload_batches.csv", empty_batches_csv, f"Clear upload_batches.csv from {source}", token)),
@@ -294,13 +297,13 @@ def render_site_sync_page() -> None:
             st.error(f"Не удалось опубликовать сайт: {exc}")
 
     clear_confirm = st.checkbox(
-        "Подтверждаю: очистить публичный каталог сайта, не трогая локальные данные админки",
+        "Подтверждаю: очистить все публичные JSON/CSV источники сайта, не трогая локальные данные админки",
         key="site_sync_clear_confirm",
     )
     if st.button("Очистить сайт", type="secondary", disabled=not clear_confirm):
         try:
             result = clear_public_site_snapshot(details="manual clear from site sync page")
-            st.success(f"Публичный каталог очищен. На сайте должно быть: {result.get('count', 0)} камней.")
+            st.success(f"Публичный каталог очищен во всех fallback-источниках. На сайте должно быть: {result.get('count', 0)} камней.")
             st.rerun()
         except Exception as exc:
             st.error(f"Не удалось очистить сайт: {exc}")
