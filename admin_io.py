@@ -27,7 +27,8 @@ STONE_COLS = BASE_COLS + DETAIL_COLS + PRICE_COLS + TAG_COLS + STATE_COLS
 BATCH_COLS = [
     'batch_number', 'upload_date', 'supplier_name', 'stones_count', 'upload_confirmed', 'notes',
     'purchase_total_rub', 'purchase_advance_rub', 'purchase_debt_rub',
-    'batch_status', 'removed_from_sale_at', 'removed_from_sale_note',
+    'batch_status', 'archived_at', 'archived_note', 'permanently_deleted_at',
+    'removed_from_sale_at', 'removed_from_sale_note',
 ]
 PAYMENT_COLS = ['batch_number', 'payment_date', 'amount_rub', 'note', 'created_at']
 
@@ -295,6 +296,9 @@ def upsert_batch_log(
         'purchase_advance_rub': advance,
         'purchase_debt_rub': debt,
         'batch_status': 'uploaded',
+        'archived_at': '',
+        'archived_note': '',
+        'permanently_deleted_at': '',
         'removed_from_sale_at': '',
         'removed_from_sale_note': '',
     }])
