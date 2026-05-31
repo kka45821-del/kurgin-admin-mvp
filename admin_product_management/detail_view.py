@@ -3,7 +3,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from admin_io import add_batch_payment, load_batches, load_stones, save_stones
+from admin_io import add_batch_payment, load_batches, load_stones, save_batches, save_stones
 from admin_log import write_admin_action
 
 from .exports import batch_report_parts, detail_table, excel_bytes, render_table_download
@@ -63,6 +63,26 @@ def _ensure_soft_remove_columns(stones: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _mark_batch_removed_from_sale(batch_number: str, today: str) -> bool:
+    batches = load_batches()
+    if batches.empty or "batch_number" not in batches.columns:
+        return False
+
+    for column in ["batch_status", "removed_from_sale_at", "removed_from_sale_note"]:
+        if column not in batches.columns:
+            batches[column] = ""
+
+    batch_mask = batches["batch_number"].astype(str).eq(str(batch_number))
+    if not bool(batch_mask.any()):
+        return False
+
+    batches.loc[batch_mask, "batch_status"] = "removed_from_sale"
+    batches.loc[batch_mask, "removed_from_sale_at"] = today
+    batches.loc[batch_mask, "removed_from_sale_note"] = "removed from sale in admin"
+    save_batches(batches)
+    return True
+
+
 def render_soft_remove(batch_number: str):
     st.markdown("#### Снять партию с продажи")
     st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
@@ -91,14 +111,19 @@ def render_soft_remove(batch_number: str):
         stones.loc[active_indexes, "current_status"] = "removed_from_sale"
         stones.loc[active_indexes, "removed_from_sale_at"] = today
         save_stones(stones)
+
+        batch_marked = _mark_batch_removed_from_sale(batch_number, today)
+        if not batch_marked:
+            st.warning("Камни сняты с продажи, но строка партии в upload_batches.csv не найдена.")
+
         write_admin_action(
             action="batch_soft_remove_from_sale",
             entity=str(batch_number),
             rows_count=affected,
             source="product_management_batch_detail",
-            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; removed_from_sale_at=today. Sold stones untouched. Public site requires separate publish.",
+            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; removed_from_sale_at=today; batch_status=removed_from_sale if batch row exists. Sold stones untouched. Public site requires separate publish.",
         )
-        st.success(f"Партия {batch_number} снята с продажи в Admin. Затронуто строк: {affected}. Для сайта нужен отдельный publish.")
+        st.success("Партия снята с продажи в админке и перемещена в архив. Публичный сайт изменится только после отдельной публикации.")
         st.rerun()
 
 
