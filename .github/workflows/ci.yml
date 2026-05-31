@@ -25,13 +25,16 @@ jobs:
       - name: Compile Python files
         run: |
           python -m py_compile app.py
+          python -m py_compile admin_menu.py
           python -m py_compile admin_io.py
           python -m py_compile admin_upload.py
+          python -m py_compile admin_batches.py
           python -m py_compile admin_validation.py
           python -m py_compile admin_publication_rules.py
           python -m py_compile admin_pricing_rules.py
           python -m py_compile admin_pricing.py
           python -m py_compile admin_publish.py
+          python -m py_compile admin_product_management/*.py
 
       - name: Run pricing smoke checks
         run: |
