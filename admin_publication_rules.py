@@ -131,8 +131,8 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     result['public_state'] = 'request_price'
     result.loc[sellable & ~checkout_enabled & ~request_only_mode, 'public_state'] = 'sellable_contact'
     result.loc[checkout_enabled, 'public_state'] = 'checkout'
-    result['public_reason'] = public_reason_series(result, sellable, checkout_enabled, request_only_mode)
     result = mask_public_prices_for_request(result, is_request_price)
+    result['public_reason'] = public_reason_series(result, sellable, checkout_enabled, request_only_mode)
     return result
 
 
