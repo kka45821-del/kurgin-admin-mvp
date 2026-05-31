@@ -169,7 +169,8 @@ def render_product_pricing_placeholder():
         else:
             st.error("Не удалось подтвердить цены: нет строк с положительной ценой.")
 
-    if st.button("Далее без подтверждения", key="product_pricing_next_to_publish"):
+    st.caption("Без подтверждения цены партия может пройти дальше только как request-price / по запросу. Онлайн-checkout для таких камней запрещён правилами публикации.")
+    if st.button("Далее без подтверждения — только по запросу", key="product_pricing_next_to_publish"):
         st.session_state["product_management_publish_ready_batch"] = batch_number
         st.session_state["product_management_next_menu"] = "Publication Gate"
         st.session_state["product_management_view"] = "main"
