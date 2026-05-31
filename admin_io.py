@@ -13,6 +13,7 @@ TAG_COLS = ['tag1', 'tag2', 'tag3', 'tag4', 'tag5', 'tag6']
 BASE_COLS = ['stone_id', 'title', 'shape', 'carat', 'color', 'clarity', 'lab', 'report_number', 'price_rub', 'karo_score']
 DETAIL_COLS = ['section', 'cut', 'polish', 'symmetry', 'fluorescence', 'measurements', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'is_colored', 'color_type', 'color_hue', 'color_intensity', 'pair_id', 'side_type', 'growth_method', 'supplier_rate', 'supplier_total']
 PRICE_COLS = [
+    'site_price_rub', 'client_mode_price_rub', 'jeweler_price_rub',
     'price_confirmed', 'availability_confirmed', 'price_source', 'price_status',
     'index_price_hint', 'admin_final_price_rub', 'admin_price_note', 'show_without_price',
     'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub',
@@ -62,6 +63,9 @@ ALIASES = {
     'growth_method': ['type', 'growth_method', 'growth method', 'method', 'cvd hpht'],
     'supplier_rate': ['rate', 'supplier rate'],
     'supplier_total': ['total amt', 'total amount', 'supplier total'],
+    'site_price_rub': ['site_price_rub', 'site price rub', 'public site price rub', 'website price rub', 'цена на сайте'],
+    'client_mode_price_rub': ['client_mode_price_rub', 'client mode price rub', 'client price rub', 'цена в режиме клиента'],
+    'jeweler_price_rub': ['jeweler_price_rub', 'jeweler price rub', 'jeweller price rub', 'цена для ювелира'],
     'price_confirmed': ['price_confirmed', 'price confirmed', 'confirmed price', 'цена подтверждена'],
     'availability_confirmed': ['availability_confirmed', 'availability confirmed', 'confirmed availability', 'наличие подтверждено'],
     'price_source': ['price_source', 'price source', 'источник цены'],
@@ -88,7 +92,12 @@ TEXT_COLS = [
     'supplier_name', 'show_in_catalog', 'is_mvp_eligible', 'has_lab_document', 'physically_received',
     'checked_by_kurgin', 'upload_confirmed', 'notes_internal', 'removed_from_sale_at',
 ]
-NUMBER_COLS = ['carat', 'price_rub', 'karo_score', 'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total', 'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub', 'calculated_price_rub', 'raw_calculated_price_rub', 'manual_usd_rub_rate', 'global_price_adjustment_percent']
+NUMBER_COLS = [
+    'carat', 'price_rub', 'site_price_rub', 'client_mode_price_rub', 'jeweler_price_rub', 'karo_score',
+    'diameter', 'diameter_mm', 'size_mm', 'quantity', 'supplier_rate', 'supplier_total',
+    'index_price_hint', 'admin_final_price_rub', 'confirmed_public_price_rub', 'calculated_price_rub',
+    'raw_calculated_price_rub', 'manual_usd_rub_rate', 'global_price_adjustment_percent'
+]
 BATCH_NUMBER_COLS = ['stones_count', 'purchase_total_rub', 'purchase_advance_rub', 'purchase_debt_rub']
 PAYMENT_NUMBER_COLS = ['amount_rub']
 
@@ -242,6 +251,13 @@ def normalize_excel(raw: pd.DataFrame, batch_number: str, upload_date, supplier_
         out[col] = clean_number(out[col])
     out['shape'] = out['shape'].apply(normalize_shape_value)
 
+    # Backward-compatible price model:
+    # - site_price_rub is the public site price.
+    # - price_rub remains the legacy/public compatibility field.
+    # - If either field is provided, mirror it into the other when missing.
+    out.loc[out['site_price_rub'].le(0) & out['price_rub'].gt(0), 'site_price_rub'] = out['price_rub']
+    out.loc[out['price_rub'].le(0) & out['site_price_rub'].gt(0), 'price_rub'] = out['site_price_rub']
+
     price_missing = out['price_rub'].le(0)
     existing_price_confirmed = out['price_confirmed'].apply(bool_value)
     existing_availability_confirmed = out['availability_confirmed'].apply(bool_value)
@@ -303,9 +319,3 @@ def upsert_batch_log(
         'removed_from_sale_note': '',
     }])
     save_batches(pd.concat([log, row], ignore_index=True))
-
-
-def batch_summary(stones: pd.DataFrame) -> pd.DataFrame:
-    if stones.empty:
-        return pd.DataFrame(columns=['batch_number', 'stones_count'])
-    return stones.groupby('batch_number', dropna=False).size().reset_index(name='stones_count')
