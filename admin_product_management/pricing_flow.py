@@ -78,6 +78,7 @@ def render_product_pricing_placeholder():
     st.dataframe(df[view_cols], use_container_width=True)
 
     if st.button("Далее", key="product_pricing_next_to_publish"):
+        st.session_state["product_management_publish_ready_batch"] = batch_number
         st.session_state["product_management_next_menu"] = "Опубликовать"
         st.session_state["product_management_view"] = "main"
         st.rerun()
