@@ -38,6 +38,14 @@ ADMIN_MENU = [
         "items": [],
     },
     {
+        "id": "site_sync",
+        "title": "Синхронизация сайта",
+        "icon": "↔",
+        "status": ACTIVE,
+        "description": "Контроль фактического публичного каталога: что видит сайт, fallback-источники и очистка публичного snapshot.",
+        "items": [],
+    },
+    {
         "id": "settings",
         "title": "Настройки",
         "icon": "🛠",

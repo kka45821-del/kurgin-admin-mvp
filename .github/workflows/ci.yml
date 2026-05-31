@@ -24,19 +24,9 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Compile Python files
+      - name: Compile all Python files
         run: |
-          python -m py_compile app.py
-          python -m py_compile admin_menu.py
-          python -m py_compile admin_io.py
-          python -m py_compile admin_upload.py
-          python -m py_compile admin_batches.py
-          python -m py_compile admin_validation.py
-          python -m py_compile admin_publication_rules.py
-          python -m py_compile admin_pricing_rules.py
-          python -m py_compile admin_pricing.py
-          python -m py_compile admin_publish.py
-          python -m py_compile admin_product_management/*.py
+          python -m compileall .
 
       - name: Run pricing smoke checks
         run: |
@@ -50,4 +40,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest tests/test_admin_pricing_rules.py tests/test_publication_rules.py
+          pytest tests/test_admin_pricing_rules.py tests/test_publication_rules.py tests/test_admin_integrity.py

@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from admin_auth import logout_button, require_admin_login
+from admin_integrity import build_integrity_report, integrity_summary
 from admin_io import load_batches, load_stones
 from admin_log import load_admin_actions
 from admin_menu import ACTIVE, FUTURE, RESTRICTED, STUB, STATUS_LABELS, visible_items, visible_sections
@@ -9,6 +10,7 @@ from admin_page_settings import render_page_settings
 from admin_price_management import render_price_management_page
 from admin_product_management import render_product_management_page
 from admin_publication_rules import public_preview, publication_summary
+from admin_site_sync import render_site_sync_page
 from admin_validation import validate_catalog
 
 st.set_page_config(page_title="KURGIN Admin MVP", page_icon="◇", layout="wide")
@@ -64,14 +66,17 @@ def render_dashboard():
     batches = load_batches()
     actions = load_admin_actions()
     critical, warnings = validate_catalog(stones) if not stones.empty else (pd.DataFrame(), pd.DataFrame())
+    integrity_report = build_integrity_report(stones=stones, batches=batches)
+    integrity = integrity_summary(integrity_report)
 
     st.markdown("### Общий статус")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Всего камней", len(stones))
     c2.metric("Visible", summary.get("visible", len(public)))
     c3.metric("Sellable", summary.get("sellable", 0))
     c4.metric("Партий", len(batches))
-    c5.metric("Действий", len(actions))
+    c5.metric("Integrity issues", integrity.get("issues", 0))
+    c6.metric("Действий", len(actions))
 
     st.markdown("### Ошибки и риски")
     if critical.empty:
@@ -83,8 +88,17 @@ def render_dashboard():
         st.warning("Есть предупреждения. Для MVP допустимо, если это цена по запросу или future-поля.")
         st.dataframe(warnings, use_container_width=True)
 
+    if integrity_report.empty:
+        st.success("Ошибок целостности данных batches ↔ stones не найдено.")
+    else:
+        if integrity.get("errors", 0):
+            st.error("Есть ошибки целостности данных batches ↔ stones.")
+        else:
+            st.warning("Есть предупреждения целостности данных batches ↔ stones.")
+        st.dataframe(integrity_report, use_container_width=True)
+
     st.markdown("### Быстрые действия")
-    st.write("Управление ценами → Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии")
+    st.write("Управление ценами → Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии → Синхронизация сайта")
 
 
 def render_settings_page(item: dict | None):
@@ -106,6 +120,10 @@ def render_active_page(section: dict, item: dict | None):
         return
     if section_id == "product_management":
         render_product_management_page()
+        return
+    if section_id == "site_sync":
+        render_header(section, item)
+        render_site_sync_page()
         return
 
     render_header(section, item)
@@ -136,7 +154,7 @@ def render_page(section: dict, item: dict | None):
 
 
 st.title("KURGIN Admin MVP")
-st.caption("Одна закрытая админка: управление ценами, товаром, preview, publication gate, настройки и audit log.")
+st.caption("Одна закрытая админка: управление ценами, товаром, синхронизацией сайта, preview, publication gate, настройки и audit log.")
 require_admin_login("login")
 
 if st.session_state.pop("admin_return_dashboard", False):

@@ -55,7 +55,7 @@ def render_product_publish():
         st.info("Нет публичных камней для распределения по section.")
 
     st.divider()
-    st.caption("Ниже используется existing Publication Gate. Он не переписан в этой задаче.")
+    st.warning("Внимание: кнопка публикации ниже публикует ВЕСЬ текущий публичный каталог из Admin data, а не только текущую партию.")
     render_publish_tab()
     st.caption("Кнопка Далее переводит к списку партий. Она не утверждает, что публикация уже выполнена.")
     if st.button("Далее", key="product_publish_next_to_batches"):
