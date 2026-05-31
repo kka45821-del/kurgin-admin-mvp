@@ -1,5 +1,6 @@
 import streamlit as st
 
+from .archive_view import render_product_archive
 from .batches_view import render_product_batches
 from .detail_view import render_product_batch_detail
 from .navigation import PRODUCT_MENU
@@ -7,6 +8,7 @@ from .pricing_flow import render_product_pricing_placeholder
 from .publish_flow import render_product_publish
 from .sections import (
     render_product_all_stones,
+    render_product_edit_placeholder,
     render_product_public_preview,
     render_product_showcase_sections,
 )
@@ -43,19 +45,23 @@ def render_product_management_page():
     with menu_col:
         selected = st.radio("Меню", PRODUCT_MENU, key="product_management_menu", label_visibility="collapsed")
     with content_col:
-        if selected == "Все камни":
-            render_product_all_stones()
-        elif selected == "Загрузка Excel":
+        if selected in {"Загрузка", "Загрузка Excel"}:
             render_product_upload()
-        elif selected == "Партии":
-            render_product_batches()
-        elif selected == "Статусы":
-            render_product_state()
-        elif selected == "Формирование цены":
+        elif selected in {"Установить цену", "Формирование цены"}:
             render_product_pricing_placeholder()
-        elif selected == "Публичный preview":
-            render_product_public_preview()
         elif selected == "Publication Gate":
             render_product_publish()
+        elif selected in {"Загруженные партии", "Партии"}:
+            render_product_batches()
+        elif selected == "Архив":
+            render_product_archive()
+        elif selected == "Редактирование":
+            render_product_edit_placeholder()
+        elif selected in {"Состояние", "Статусы"}:
+            render_product_state()
+        elif selected == "Все камни":
+            render_product_all_stones()
+        elif selected == "Публичный preview":
+            render_product_public_preview()
         elif selected == "Разделы витрины":
             render_product_showcase_sections()
