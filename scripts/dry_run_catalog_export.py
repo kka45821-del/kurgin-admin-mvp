@@ -16,6 +16,9 @@ REQUIRED_STONE_FIELDS = [
     "public_sellable",
     "checkout_enabled",
     "public_action",
+    "is_request_price",
+    "public_state",
+    "public_reason",
     "price_rub",
     "price_confirmed",
     "availability_confirmed",
@@ -24,6 +27,8 @@ REQUIRED_STONE_FIELDS = [
     "calculated_price_rub",
     "pricing_run_timestamp",
 ]
+
+PUBLIC_STATES = {"request_price", "sellable_contact", "checkout"}
 
 
 def run() -> None:
@@ -38,13 +43,24 @@ def run() -> None:
         return
 
     missing_by_stone = []
+    invalid_state_by_stone = []
+    invalid_checkout_by_stone = []
     for stone in stones:
         stone_id = stone.get("stone_id") or stone.get("id") or "<unknown>"
         missing = [field for field in REQUIRED_STONE_FIELDS if field not in stone]
         if missing:
             missing_by_stone.append({"stone_id": stone_id, "missing": missing})
+        if stone.get("public_state") not in PUBLIC_STATES:
+            invalid_state_by_stone.append({"stone_id": stone_id, "public_state": stone.get("public_state")})
+        if stone.get("checkout_enabled") is True and stone.get("public_action") != "checkout":
+            invalid_checkout_by_stone.append({"stone_id": stone_id, "public_action": stone.get("public_action")})
+        if str(stone.get("price_status") or "").lower() in {"needs_review", "index_pending", "index_suggested"}:
+            assert stone.get("checkout_enabled") is not True, stone_id
+            assert stone.get("public_action") == "request_price", stone_id
 
     assert not missing_by_stone, missing_by_stone
+    assert not invalid_state_by_stone, invalid_state_by_stone
+    assert not invalid_checkout_by_stone, invalid_checkout_by_stone
     assert int(payload.get("count", 0)) == len(stones), payload.get("count")
     assert len(stones) == len(public_df), (len(stones), len(public_df))
 
