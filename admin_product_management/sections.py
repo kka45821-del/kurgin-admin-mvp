@@ -24,6 +24,13 @@ def product_public_table() -> pd.DataFrame:
     else:
         result["public_status"] = "ready_for_publish"
 
+    if "site_price_rub" not in result.columns:
+        result["site_price_rub"] = result.get("price_rub", "")
+    if "client_mode_price_rub" not in result.columns:
+        result["client_mode_price_rub"] = ""
+    if "jeweler_price_rub" not in result.columns:
+        result["jeweler_price_rub"] = ""
+
     columns = [
         "stone_id",
         "title",
@@ -37,6 +44,9 @@ def product_public_table() -> pd.DataFrame:
         "section",
         "price_status",
         "price_rub",
+        "site_price_rub",
+        "client_mode_price_rub",
+        "jeweler_price_rub",
         "show_in_catalog",
         "current_status",
         "public_status",
@@ -60,9 +70,12 @@ def render_product_all_stones():
     result["public_status"] = result.get("stone_id", pd.Series("", index=result.index)).astype(str).map(
         lambda value: "public_preview" if value in public_ids else "not_public"
     )
-    result["site_price_rub"] = result.get("price_rub", "")
-    result["client_mode_price_rub"] = "not available"
-    result["jeweler_price_rub"] = "not available"
+    if "site_price_rub" not in result.columns:
+        result["site_price_rub"] = result.get("price_rub", "")
+    if "client_mode_price_rub" not in result.columns:
+        result["client_mode_price_rub"] = ""
+    if "jeweler_price_rub" not in result.columns:
+        result["jeweler_price_rub"] = ""
 
     tag_cols = [col for col in result.columns if str(col).lower().startswith("tag")]
     columns = [
@@ -79,6 +92,7 @@ def render_product_all_stones():
         "report_number",
         "section",
         "KURGIN Score",
+        "price_rub",
         "site_price_rub",
         "client_mode_price_rub",
         "jeweler_price_rub",
