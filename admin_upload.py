@@ -16,6 +16,7 @@ from admin_io import (
 )
 from admin_log import write_admin_action
 from admin_pricing_rules import validate_round_main_large_score
+from admin_section_policy import product_section_violations
 from admin_validation import validate_catalog
 
 
@@ -183,12 +184,6 @@ def _infer_section_for_score_gate(row: pd.Series) -> str:
 
 
 def score_gate_errors(normalized: pd.DataFrame) -> pd.DataFrame:
-    """Return upload-blocking errors for Round main/large stones without KURGIN Score.
-
-    This gate is stricter than pricing calculation: if any row fails, the whole
-    Excel batch must not be saved. When Excel has no section column, section is
-    inferred from carat for this gate only: 1.00–2.99 ct = main, 3.00+ ct = large.
-    """
     rows = []
     if normalized.empty:
         return pd.DataFrame(rows)
@@ -219,9 +214,36 @@ def score_gate_errors(normalized: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = False) -> None:
+def section_gate_errors(normalized: pd.DataFrame, allowed_sections: set[str] | None = None, context_label: str = "") -> pd.DataFrame:
+    if not allowed_sections:
+        return pd.DataFrame()
+    violations = product_section_violations(normalized)
+    if violations.empty:
+        return pd.DataFrame()
+    rows = []
+    for _, row in violations.iterrows():
+        rows.append({
+            "type": "critical",
+            "field": "section",
+            "rows": str(row.get("row", "")),
+            "count": 1,
+            "message": f"{context_label or 'Текущий контур загрузки'} принимает только Основной каталог и Крупные. Используйте 'Другие разделы' для остальных категорий.",
+            "stone_id": row.get("stone_id", ""),
+            "section": row.get("section", ""),
+        })
+    return pd.DataFrame(rows)
+
+
+def render_upload_tab(
+    allow_replace: bool = True,
+    show_next_to_pricing: bool = False,
+    allowed_sections: set[str] | None = None,
+    section_context_label: str = "",
+) -> None:
     st.subheader("Загрузка новой партии")
     st.caption("Единый импорт: KURGIN-шаблон, supplier packing list и результаты KURGIN Score.")
+    if allowed_sections:
+        st.info("Этот контур загрузки принимает только: Основной каталог и Крупные.")
     st.warning(
         "MVP-предупреждение: импорт сейчас автоматически помечает камни как available/show_in_catalog/is_mvp_eligible. "
         "Перед публикацией обязательно проверь Publication Gate и публичный preview."
@@ -308,8 +330,10 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
 
     critical_errors, warnings = validate_catalog(normalized)
     score_errors = score_gate_errors(normalized)
-    if not score_errors.empty:
-        critical_errors = pd.concat([critical_errors, score_errors], ignore_index=True)
+    section_errors = section_gate_errors(normalized, allowed_sections=allowed_sections, context_label=section_context_label)
+    for extra_errors in [score_errors, section_errors]:
+        if not extra_errors.empty:
+            critical_errors = pd.concat([critical_errors, extra_errors], ignore_index=True)
 
     st.subheader("Проверка загрузки")
 
@@ -344,7 +368,7 @@ def render_upload_tab(allow_replace: bool = True, show_next_to_pricing: bool = F
             entity=str(batch_number).strip(),
             rows_count=len(normalized),
             source="admin_upload",
-            details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}; purchase_total_rub={purchase_total}; purchase_advance_rub={purchase_advance}; purchase_debt_rub={purchase_debt}",
+            details=f"Поставщик: {supplier_name}; лист: {selected_sheet}; режим: {mode}; purchase_total_rub={purchase_total}; purchase_advance_rub={purchase_advance}; purchase_debt_rub={purchase_debt}; allowed_sections={sorted(allowed_sections or [])}",
         )
         st.session_state["product_management_last_batch"] = {
             "batch_number": str(batch_number).strip(),
