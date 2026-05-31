@@ -37,7 +37,7 @@ def _confirm_batch_prices(stones: pd.DataFrame, batch_number: str) -> int:
     target_prices = site_price.loc[target_index]
     timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    for col in ["site_price_rub", "price_rub", "confirmed_public_price_rub", "published_price_rub"]:
+    for col in ["site_price_rub", "price_rub", "confirmed_public_price_rub"]:
         if col not in stones.columns:
             stones[col] = ""
     for col in ["price_confirmed", "availability_confirmed", "price_status", "price_source", "pricing_run_timestamp"]:
@@ -47,7 +47,6 @@ def _confirm_batch_prices(stones: pd.DataFrame, batch_number: str) -> int:
     stones.loc[target_index, "site_price_rub"] = target_prices
     stones.loc[target_index, "price_rub"] = target_prices
     stones.loc[target_index, "confirmed_public_price_rub"] = target_prices
-    stones.loc[target_index, "published_price_rub"] = target_prices
     stones.loc[target_index, "price_confirmed"] = True
     stones.loc[target_index, "availability_confirmed"] = True
     stones.loc[target_index, "price_status"] = "confirmed"
@@ -100,7 +99,7 @@ def render_product_pricing_placeholder():
         st.warning("Партия сохранена в session state, но строки этой партии не найдены в текущем Admin catalog.")
         return
 
-    for col in ["site_price_rub", "client_mode_price_rub", "jeweler_price_rub", "confirmed_public_price_rub", "published_price_rub"]:
+    for col in ["site_price_rub", "client_mode_price_rub", "jeweler_price_rub", "confirmed_public_price_rub"]:
         if col not in df.columns:
             df[col] = 0
 
@@ -130,7 +129,6 @@ def render_product_pricing_placeholder():
         "price_rub",
         "site_price_rub",
         "confirmed_public_price_rub",
-        "published_price_rub",
         "client_mode_price_rub",
         "jeweler_price_rub",
         "цена на сайте",
