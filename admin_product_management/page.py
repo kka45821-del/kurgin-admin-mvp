@@ -6,7 +6,12 @@ from .detail_view import render_product_batch_detail
 from .navigation import PRODUCT_MENU
 from .pricing_flow import render_product_pricing_placeholder
 from .publish_flow import render_product_publish
-from .sections import render_product_all_stones, render_product_edit_placeholder
+from .sections import (
+    render_product_all_stones,
+    render_product_edit_placeholder,
+    render_product_public_preview,
+    render_product_showcase_sections,
+)
 from .state_view import render_product_state
 from .upload_flow import render_product_upload
 
@@ -20,8 +25,12 @@ def render_product_management_page():
             st.rerun()
     with right_title:
         st.subheader("Управление товаром")
-        st.caption("Отдельная рабочая зона: камни, загрузка, цена, публикация, партии и состояние.")
+        st.caption(
+            "Главная рабочая зона админки: камни, загрузка по фиксированному Excel-шаблону, "
+            "партии, статусы, формирование цены, public preview и публикация."
+        )
 
+    st.warning("Этот раздел не создаёт checkout, payment, reserve, order, Verify или PDF/report.")
     st.divider()
 
     next_menu = st.session_state.pop("product_management_next_menu", None)
@@ -40,7 +49,7 @@ def render_product_management_page():
             render_product_upload()
         elif selected == "Установить цену":
             render_product_pricing_placeholder()
-        elif selected == "Опубликовать":
+        elif selected == "Publication Gate":
             render_product_publish()
         elif selected == "Загруженные партии":
             render_product_batches()
@@ -52,3 +61,7 @@ def render_product_management_page():
             render_product_state()
         elif selected == "Все камни":
             render_product_all_stones()
+        elif selected == "Публичный preview":
+            render_product_public_preview()
+        elif selected == "Разделы витрины":
+            render_product_showcase_sections()
