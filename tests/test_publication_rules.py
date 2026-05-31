@@ -33,15 +33,16 @@ def first_preview(row):
     return result.iloc[0]
 
 
-def test_confirmed_price_is_sellable_but_checkout_disabled_until_payment_flow_exists():
+def test_confirmed_price_is_sellable_contact_without_checkout():
     row = first_preview(base_stone())
     assert bool(row["public_visible"]) is True
     assert bool(row["public_sellable"]) is True
     assert bool(row["checkout_enabled"]) is False
     assert row["public_action"] == "request_price"
-    assert bool(row["is_request_price"]) is True
+    assert bool(row["is_request_price"]) is False
     assert row["public_state"] == "sellable_contact"
     assert row["public_reason"] == "checkout_not_enabled"
+    assert int(row["price_rub"]) == 100000
 
 
 def test_needs_review_never_checkout_or_sellable():
@@ -50,16 +51,20 @@ def test_needs_review_never_checkout_or_sellable():
     assert bool(row["public_sellable"]) is False
     assert bool(row["checkout_enabled"]) is False
     assert row["public_action"] == "request_price"
+    assert bool(row["is_request_price"]) is True
     assert row["public_state"] == "request_price"
-    assert row["public_reason"] == "price_needs_review"
+    assert row["public_reason"] == "price_missing"
+    assert int(row["price_rub"]) == 0
 
 
 def test_index_pending_is_visible_request_price_only():
     row = first_preview(base_stone(price_status="index_pending", price_confirmed=False))
     assert bool(row["public_visible"]) is True
     assert bool(row["public_sellable"]) is False
+    assert bool(row["is_request_price"]) is True
     assert row["public_state"] == "request_price"
-    assert row["public_reason"] == "price_needs_review"
+    assert row["public_reason"] == "price_missing"
+    assert int(row["price_rub"]) == 0
 
 
 def test_missing_price_can_be_visible_request_price_when_show_without_price():
@@ -68,6 +73,7 @@ def test_missing_price_can_be_visible_request_price_when_show_without_price():
     assert bool(row["public_sellable"]) is False
     assert row["public_action"] == "request_price"
     assert row["public_reason"] == "price_missing"
+    assert int(row["price_rub"]) == 0
 
 
 def test_sold_or_missing_public_flags_are_not_visible():
