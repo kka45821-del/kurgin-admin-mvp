@@ -1,4 +1,4 @@
-batch_number,upload_date,supplier_name,stones_count,upload_confirmed,notes,purchase_total_rub,purchase_advance_rub,purchase_debt_rub
-P-0001,2026-05-26,пробный,174,True,пробная загрузка,0,0,0
-P-0002,2026-05-26,пробный,174,True,,0,0,0
-P-0003,2026-05-26,проб,174,True,,0,0,0
+batch_number,upload_date,supplier_name,stones_count,upload_confirmed,notes,purchase_total_rub,purchase_advance_rub,purchase_debt_rub,batch_status,archived_at,archived_note,permanently_deleted_at,removed_from_sale_at,removed_from_sale_note
+P-0001,2026-05-26,legacy_supplier,174,True,legacy_dev_batch,0,0,0,archived,2026-05-31,legacy_dev_archive,,2026-05-31,legacy_dev_archive
+P-0002,2026-05-26,legacy_supplier,174,True,legacy_dev_batch,0,0,0,archived,2026-05-31,legacy_dev_archive,,2026-05-31,legacy_dev_archive
+P-0003,2026-05-26,legacy_supplier,174,True,legacy_dev_batch,0,0,0,archived,2026-05-31,legacy_dev_archive,,2026-05-31,legacy_dev_archive
