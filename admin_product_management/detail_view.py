@@ -3,9 +3,10 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from admin_io import add_batch_payment, load_batches, load_stones, save_batches, save_stones
+from admin_io import add_batch_payment, load_batches
 from admin_log import write_admin_action
 
+from .actions import archive_batch
 from .exports import batch_report_parts, detail_table, excel_bytes, render_table_download
 from .helpers import batch_metadata, rub, safe_name
 from .payments import batch_payment_rows
@@ -49,70 +50,12 @@ def render_batch_finance(batch_number: str, meta: dict):
             st.rerun()
 
 
-def _ensure_soft_remove_columns(stones: pd.DataFrame) -> pd.DataFrame:
-    result = stones.copy()
-    defaults = {
-        "show_in_catalog": True,
-        "is_mvp_eligible": True,
-        "current_status": "available",
-        "removed_from_sale_at": "",
-    }
-    for column, default in defaults.items():
-        if column not in result.columns:
-            result[column] = default
-    return result
-
-
-def _mark_batch_removed_from_sale(batch_number: str, today: str) -> bool:
-    batches = load_batches()
-    if batches.empty or "batch_number" not in batches.columns:
-        return False
-
-    for column in ["batch_status", "removed_from_sale_at", "removed_from_sale_note"]:
-        if column not in batches.columns:
-            batches[column] = ""
-
-    batch_mask = batches["batch_number"].astype(str).eq(str(batch_number))
-    if not bool(batch_mask.any()):
-        return False
-
-    batches.loc[batch_mask, "batch_status"] = "removed_from_sale"
-    batches.loc[batch_mask, "removed_from_sale_at"] = today
-    batches.loc[batch_mask, "removed_from_sale_note"] = "removed from sale in admin"
-    save_batches(batches)
-    return True
-
-
 def render_soft_remove(batch_number: str):
     st.markdown("#### Снять партию с продажи")
     st.warning("Партия будет снята с продажи в админке. Публичный сайт изменится только после отдельной публикации.")
     confirm = st.checkbox("Подтверждаю снятие партии с продажи", key=f"remove_confirm_{batch_number}")
     if st.button("Снять партию с продажи", key=f"remove_batch_{batch_number}", disabled=not confirm):
-        stones = load_stones()
-        if stones.empty or "batch_number" not in stones.columns:
-            st.error("Камни партии не найдены.")
-            return
-
-        stones = _ensure_soft_remove_columns(stones)
-        batch_mask = stones["batch_number"].astype(str).eq(str(batch_number))
-        status = stones["current_status"].fillna("").astype(str).str.strip().str.lower()
-        sold_mask = status.eq("sold")
-        active_mask = (batch_mask & ~sold_mask).reindex(stones.index, fill_value=False).fillna(False).astype(bool)
-        active_indexes = stones.index[active_mask]
-        affected = int(len(active_indexes))
-
-        if affected == 0:
-            st.warning("Нет активных камней для снятия с продажи.")
-            return
-
-        today = date.today().isoformat()
-        stones.loc[active_indexes, "show_in_catalog"] = False
-        stones.loc[active_indexes, "is_mvp_eligible"] = False
-        stones.loc[active_indexes, "current_status"] = "removed_from_sale"
-        stones.loc[active_indexes, "removed_from_sale_at"] = today
-        save_stones(stones)
-
-        batch_marked = _mark_batch_removed_from_sale(batch_number, today)
+        affected, batch_marked = archive_batch(batch_number, note="removed from sale in admin")
         if not batch_marked:
             st.warning("Камни сняты с продажи, но строка партии в upload_batches.csv не найдена.")
 
@@ -121,9 +64,15 @@ def render_soft_remove(batch_number: str):
             entity=str(batch_number),
             rows_count=affected,
             source="product_management_batch_detail",
-            details="show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; removed_from_sale_at=today; batch_status=removed_from_sale if batch row exists. Sold stones untouched. Public site requires separate publish.",
+            details=(
+                "show_in_catalog=false; is_mvp_eligible=false; current_status=removed_from_sale; "
+                "removed_from_sale_at=today for non-sold stones; batch_status=archived; "
+                "archived_at=today; archived_note=removed from sale in admin. Sold stones untouched. "
+                "Public site requires separate publish."
+            ),
         )
-        st.success("Партия снята с продажи в админке и перемещена в архив. Публичный сайт изменится только после отдельной публикации.")
+        st.success("Партия снята с продажи и перемещена в Архив. Публичный сайт изменится только после отдельной публикации.")
+        st.session_state["product_batch_detail_return_menu"] = "Архив"
         st.rerun()
 
 
@@ -131,9 +80,10 @@ def render_product_batch_detail(batch_number: str):
     batches = load_batches()
     meta = batch_metadata(batch_number, batches)
 
-    if st.button("← Назад к состоянию"):
-        st.session_state["product_management_view"] = "state"
-        st.session_state["product_management_next_menu"] = "Состояние"
+    return_menu = st.session_state.get("product_batch_detail_return_menu", "Состояние")
+    if st.button("← Назад"):
+        st.session_state["product_management_view"] = "main"
+        st.session_state["product_management_next_menu"] = return_menu
         st.rerun()
 
     st.markdown(f"### Партия {batch_number}")
