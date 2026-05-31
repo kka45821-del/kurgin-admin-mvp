@@ -1,25 +1,25 @@
 # KURGIN ADMIN PRODUCT MANAGEMENT STABILIZATION v0.1
 
 Repo: `kka45821-del/kurgin-admin-mvp`
-Scope: full Product Management stabilization audit after workflow implementation, package split, and navigation-state fix.
-Status: source-level audit completed / runtime blocked from this tool context.
+Scope: Product Management stabilization audit and regression log.
+Status: source-level soft-remove fix completed / live runtime recheck required.
 
-This document records the final stabilization audit for Product Management.
+This document records stabilization after Product Management workflow implementation, package split, navigation/session-state fix, and soft-remove runtime fix.
 
-This task did not add Product Management features, did not change business logic, did not redesign UI, did not change data, did not change schema, did not change public Streamlit, did not change `kurgin-data`, did not change Analyzer/formula/scoring, did not add pricing engine, client payment, checkout, reserve/sold automation, cleanup/delete, or production deploy.
+This task did not add Product Management features, did not change business logic, did not redesign UI, did not change public Streamlit, did not change `kurgin-data`, did not change Analyzer/formula/scoring, did not add pricing engine, client payment, checkout, reserve/sold automation, cleanup/delete, or production deploy.
 
 ## 1. Checked head
 
-Source checked head before this docs update:
+Checked source head after soft-remove fix:
 
 ```text
-a21455744f72d2170c77b1f9eda6569b361897de
+ed2cecca7f482c2a347a3416cdbdb22fc6fd77e7
 ```
 
-Commit message for this stabilization documentation update:
+Documentation update commit message:
 
 ```text
-Stabilize product management runtime
+Fix product management soft remove
 ```
 
 ## 2. Final verdict
@@ -30,11 +30,11 @@ RISK
 
 Reason:
 
-- Source-level audit is `PASS`.
-- Runtime/live audit is `BLOCKED` because live Admin browser execution is not available from this tool context.
-- `py_compile` is also `BLOCKED` from this tool context because repository files are inspected through GitHub connector, not executed in a checked-out runtime.
+- Source-level regression fix is `PASS`.
+- Runtime verdict remains `RISK` because the live Admin soft-remove path was not re-tested from this tool context after the fix.
+- `py_compile` was not executed from this tool context.
 
-This is not a Product Management source blocker. It is a runtime-access limitation.
+This is not a known source blocker. It is a runtime-verification gap.
 
 ## 3. Source-level verdict
 
@@ -52,31 +52,42 @@ from admin_product_management import render_product_management_page
 ```
 
 - The old monolith `admin_product_management.py` is absent from the current source path and is no longer used.
-- Product Management is now a package under `admin_product_management/`.
-- The package has the agreed logical modules.
+- Product Management is in package `admin_product_management/`.
 - `render_upload_tab()` is reused; upload flow was not rewritten from scratch.
 - `render_publish_tab()` is reused; publish logic was not rewritten.
 - `admin_io.py` remains the storage/schema layer.
-- Navigation-state regression is addressed through `product_management_next_menu` request handling.
+- Step navigation uses `product_management_next_menu` instead of mutating widget-bound `product_management_menu` after `st.radio()` creation.
+- Soft remove now uses robust dataframe/index handling.
 - No forbidden repository was touched.
 
 ## 4. Runtime verdict
 
 ```text
-BLOCKED
+RISK
 ```
 
 Reason:
 
-- Live Admin browser/runtime is not accessible from this task context.
-- I cannot honestly mark runtime checks as PASS without opening the deployed Admin and executing the UI path.
-- The known live runtime bug from the previous smoke was addressed in source code, but this task did not re-run live UI.
+- Live Admin runtime previously exposed a `TypeError` when pressing `Снять партию с продажи`.
+- The source-level fix has been applied.
+- Live Admin was not re-tested after the fix from this tool context.
 
-Required live verification remains:
+Expected runtime result after fix:
+
+- `Снять партию с продажи` should not crash.
+- Non-sold active rows in the batch should receive:
+  - `show_in_catalog = false`
+  - `is_mvp_eligible = false`
+  - `current_status = removed_from_sale`
+  - `removed_from_sale_at = today`
+- Sold rows should remain untouched.
+- If no active rows exist, UI should show:
 
 ```text
-Admin -> Управление товаром -> Загрузка -> Save batch -> Далее -> Установить цену -> Далее -> Опубликовать -> Далее -> Загруженные партии -> Состояние -> Подробнее -> ← Назад к состоянию -> Все камни
+Нет активных камней для снятия с продажи.
 ```
+
+- Public site should not change until a separate publish.
 
 ## 5. Checked files / modules
 
@@ -100,11 +111,10 @@ admin_product_management/exports.py
 admin_product_management/helpers.py
 ```
 
-Checked docs:
+Primary file changed by this soft-remove fix:
 
 ```text
-docs/KURGIN_PRODUCT_MANAGEMENT_WORKFLOW_LOCK_V0_1.md
-docs/KURGIN_ADMIN_PRODUCT_MANAGEMENT_STABILIZATION_V0_1.md
+admin_product_management/detail_view.py
 ```
 
 ## 6. Source-level checklist
@@ -115,89 +125,44 @@ docs/KURGIN_ADMIN_PRODUCT_MANAGEMENT_STABILIZATION_V0_1.md
 | Product Management imported from package entrypoint | PASS |
 | Old monolith `admin_product_management.py` absent / not used | PASS |
 | Package `admin_product_management/` exists | PASS |
-| `page.py` exists | PASS |
-| `navigation.py` exists | PASS |
-| `upload_flow.py` exists | PASS |
-| `pricing_flow.py` exists | PASS |
-| `publish_flow.py` exists | PASS |
-| `batches_view.py` exists | PASS |
-| `state_view.py` exists | PASS |
-| `detail_view.py` exists | PASS |
-| `payments.py` exists | PASS |
-| `exports.py` exists | PASS |
-| `helpers.py` exists | PASS |
-| `product_management_next_menu` request key is used for step navigation | PASS |
+| `product_management_next_menu` request key used for step navigation | PASS |
 | Direct next-button mutation of widget-bound `product_management_menu` removed | PASS |
 | Existing `render_upload_tab()` reused | PASS |
 | Existing `render_publish_tab()` reused | PASS |
 | `admin_io.py` remains storage/schema layer | PASS |
+| Soft remove guarantees required columns before update | PASS |
+| Soft remove uses boolean mask aligned with `stones.index` | PASS |
+| Soft remove uses explicit `active_indexes` for `.loc` updates | PASS |
+| Soft remove handles `affected == 0` without crash | PASS |
+| Sold rows excluded from active remove mask | PASS |
 | No public Streamlit changes | PASS |
 | No direct `kurgin-data` changes | PASS |
 | No Analyzer/formula/scoring changes | PASS |
 
-## 7. Navigation/session-state audit
-
-### 7.1. Safe pattern
-
-The active pattern is:
-
-```python
-st.session_state["product_management_next_menu"] = "..."
-st.rerun()
-```
-
-Then, before rendering the `st.radio()` widget in `render_product_management_page()`:
-
-```python
-next_menu = st.session_state.pop("product_management_next_menu", None)
-if next_menu in PRODUCT_MENU:
-    st.session_state["product_management_menu"] = next_menu
-```
-
-This avoids changing the widget-bound key after the widget has been instantiated.
-
-### 7.2. Covered transitions
-
-Covered source-level transitions:
-
-| Transition | Request key | Source-level result |
-|---|---|---:|
-| `Загрузка -> Установить цену` | `product_management_next_menu` | PASS |
-| `Установить цену -> Опубликовать` | `product_management_next_menu` | PASS |
-| `Опубликовать -> Загруженные партии` | `product_management_next_menu` | PASS |
-| `Подробнее -> Состояние` | `product_management_next_menu` | PASS |
-
-## 8. Runtime checklist status
+## 7. Runtime checklist status
 
 | Runtime check | Status |
 |---|---:|
-| Admin opens | BLOCKED — live runtime unavailable |
-| `Управление товаром` opens | BLOCKED — live runtime unavailable |
-| Menu order is correct | SOURCE PASS / runtime blocked |
-| `Загрузка` opens | BLOCKED — live runtime unavailable |
-| No `Заменить весь каталог` in Product Management upload | SOURCE PASS / runtime blocked |
-| Save batch `Далее` does not crash | SOURCE FIXED / runtime blocked |
-| `Далее` opens `Установить цену` | SOURCE PASS / runtime blocked |
-| `Установить цену` shows batch summary and 3 price columns | SOURCE PASS / runtime blocked |
-| `Далее` from pricing opens `Опубликовать` | SOURCE PASS / runtime blocked |
-| `Опубликовать` opens existing Publication Gate | SOURCE PASS / runtime blocked |
-| `Далее` from publish opens `Загруженные партии` | SOURCE PASS / runtime blocked |
-| `Загруженные партии` opens | BLOCKED — live runtime unavailable |
-| Batch has expand/download/detail controls | SOURCE PASS / runtime blocked |
-| `Состояние` opens | BLOCKED — live runtime unavailable |
-| `Подробнее` opens as internal page | SOURCE PASS / runtime blocked |
-| `← Назад к состоянию` works | SOURCE PASS / runtime blocked |
-| Detail page has finance/payments/balance/3 tables/downloads/soft remove | SOURCE PASS / runtime blocked |
-| `Все камни` opens | BLOCKED — live runtime unavailable |
-| Existing import flow opens | SOURCE PASS / runtime blocked |
-| Existing publish flow opens | SOURCE PASS / runtime blocked |
+| Admin opens | NEEDS LIVE RECHECK |
+| `Управление товаром` opens | NEEDS LIVE RECHECK |
+| `Состояние` opens | NEEDS LIVE RECHECK |
+| `Подробнее` opens as separate internal page | NEEDS LIVE RECHECK |
+| `← Назад к состоянию` works through `product_management_next_menu` | SOURCE PASS / NEEDS LIVE RECHECK |
+| Financial block visible | SOURCE PASS / NEEDS LIVE RECHECK |
+| Supplier payments visible | SOURCE PASS / NEEDS LIVE RECHECK |
+| 3 tables visible | SOURCE PASS / NEEDS LIVE RECHECK |
+| Excel downloads still available | SOURCE PASS / NEEDS LIVE RECHECK |
+| `Снять партию с продажи` no longer crashes | SOURCE FIXED / NEEDS LIVE RECHECK |
+| No active rows case shows warning instead of crash | SOURCE FIXED / NEEDS LIVE RECHECK |
+| Existing import flow opens | SOURCE PASS / NEEDS LIVE RECHECK |
+| Existing publish flow opens | SOURCE PASS / NEEDS LIVE RECHECK |
 | No client payment / checkout / reserve / sold automation added | SOURCE PASS |
 
-## 9. Found bugs
+## 8. Found bugs
 
 ### BUG-001 — Streamlit widget session_state mutation
 
-Observed in live Admin before stabilization:
+Observed earlier:
 
 ```text
 StreamlitAPIException after pressing Далее after Save batch
@@ -209,75 +174,129 @@ Cause:
 The code attempted to assign st.session_state["product_management_menu"] after the st.radio widget with key="product_management_menu" had already been created.
 ```
 
-Impact:
+Status:
 
-- Save batch itself could complete.
-- Step navigation from upload to pricing crashed the live Admin page.
+```text
+FIXED SOURCE-LEVEL
+```
 
 ### BUG-002 — Back-to-state path used widget-bound menu key
 
-Found during source-level stabilization follow-up:
+Found during source-level stabilization:
 
 ```text
 Подробнее -> ← Назад к состоянию used product_management_menu directly
 ```
 
-Impact:
+Status:
 
-- It could trigger the same Streamlit widget-state problem if the radio widget lifecycle overlaps on rerun.
+```text
+FIXED SOURCE-LEVEL
+```
 
-## 10. Fixed bugs
+### BUG-003 — Soft remove TypeError
+
+Observed in live Admin:
+
+```text
+TypeError in admin_product_management/detail_view.py render_soft_remove() when pressing Снять партию с продажи
+```
+
+Likely cause class:
+
+```text
+dataframe/schema/dtype/index alignment issue during boolean mask or .loc assignment
+```
+
+Status:
+
+```text
+FIXED SOURCE-LEVEL / NEEDS LIVE RECHECK
+```
+
+## 9. Fixed bugs
 
 ### FIX-001 — Safe next-menu request key
 
-Implemented stabilization fix:
+Step navigation now writes to:
 
 ```python
 st.session_state["product_management_next_menu"]
 ```
 
-Step buttons now write to the request key, not the widget key.
+`render_product_management_page()` consumes it before rendering `st.radio()`.
 
 ### FIX-002 — Detail back navigation stabilized
 
-`← Назад к состоянию` now also uses:
+`← Назад к состоянию` now uses:
 
 ```python
 st.session_state["product_management_next_menu"] = "Состояние"
 ```
 
-The detail view still sets:
+### FIX-003 — Robust soft remove dataframe update
 
-```python
-st.session_state["product_management_view"] = "state"
-```
+Implemented in `admin_product_management/detail_view.py`:
 
-This keeps the internal-page return behavior without direct post-widget mutation of the menu key.
-
-## 11. py_compile status
+1. Required columns are guaranteed before update:
 
 ```text
-BLOCKED
+show_in_catalog
+is_mvp_eligible
+current_status
+removed_from_sale_at
+```
+
+2. The active mask is aligned with `stones.index`:
+
+```python
+active_mask = (batch_mask & ~sold_mask).reindex(stones.index, fill_value=False).fillna(False).astype(bool)
+active_indexes = stones.index[active_mask]
+```
+
+3. Updates use explicit indexes:
+
+```python
+stones.loc[active_indexes, "show_in_catalog"] = False
+stones.loc[active_indexes, "is_mvp_eligible"] = False
+stones.loc[active_indexes, "current_status"] = "removed_from_sale"
+stones.loc[active_indexes, "removed_from_sale_at"] = today
+```
+
+4. If no active rows exist:
+
+```text
+Нет активных камней для снятия с продажи.
+```
+
+and the function returns without saving or crashing.
+
+5. Sold rows are excluded from the active remove mask.
+
+6. After successful update:
+
+- `save_stones(stones)` is called;
+- `write_admin_action(...)` is called;
+- success message is shown;
+- `st.rerun()` is called.
+
+## 10. py_compile status
+
+```text
+NOT EXECUTED FROM THIS TOOL CONTEXT
 ```
 
 Reason:
 
-- This tool context can edit and inspect GitHub files but does not execute a checked-out repository runtime.
-- No CI compile result is available in this task context.
+- This context can edit and inspect GitHub files but does not run the deployed Admin or a checked-out repository runtime.
 
-Required command for local/runtime verification:
+Required local/CI command:
 
 ```bash
 python -m py_compile app.py admin_upload.py admin_io.py admin_product_management/*.py
 ```
 
-Recommended but not executed here:
-
-```bash
-python -m streamlit run app.py
-```
-
-## 12. Active path
+## 11. Active path
 
 Active Product Management path:
 
@@ -303,7 +322,7 @@ Active modules:
 - `admin_product_management/exports.py`
 - `admin_product_management/helpers.py`
 
-## 13. Legacy / fallback path
+## 12. Legacy / fallback path
 
 Legacy/fallback retained intentionally:
 
@@ -313,35 +332,19 @@ Legacy/fallback retained intentionally:
 
 Fallback includes existing catalog/import/batches/preview/publication/sections/statuses/prices routes.
 
-This fallback must not be hidden, removed, or cleaned up in this stabilization task.
+Do not hide or remove it in Product Management stabilization tasks.
 
-## 14. Remaining risks after stabilization
+## 13. Remaining risks after fix
 
 | Risk | Level | Handling |
 |---|---:|---|
-| Live runtime not rechecked after latest source fix | Medium | Run manual Admin smoke after deploy refresh. |
-| `py_compile` not executed in this tool context | Medium | Run local/CI compile command. |
-| Product Management uses Streamlit session state heavily | Medium | Keep navigation request keys separated from widget keys. |
-| Legacy Catalog fallback overlaps Product Management paths | Low-medium | Keep fallback for safety until a separate cleanup task. |
+| Live runtime not rechecked after soft-remove fix | Medium | Re-run live Admin `Снять партию с продажи`. |
+| `py_compile` not executed here | Medium | Run local/CI compile command. |
 | Soft remove is Admin-side only until publish | Medium | Keep publish boundary explicit. |
 | Supplier payments are internal only | Medium | Do not confuse with client checkout/payment. |
+| Legacy Catalog fallback overlaps Product Management paths | Low-medium | Keep fallback until separate cleanup task. |
 
-## 15. Future / not done here
-
-Left for future approved tasks:
-
-- live Admin browser smoke after deployment refresh;
-- CI compile check if repository workflow supports it;
-- Product Management UX polish;
-- real pricing engine;
-- client-facing payment logic;
-- checkout;
-- reserve/sold automation;
-- production launch hardening;
-- cleanup/delete workflows;
-- hiding/removing legacy Catalog fallback.
-
-## 16. Blocked without separate task
+## 14. Future / blocked without separate task
 
 Do not do without separate approval:
 
@@ -357,17 +360,17 @@ Do not do without separate approval:
 - production deploy;
 - hiding legacy Catalog fallback.
 
-## 17. Final smoke summary
+## 15. Final smoke summary
 
 ```text
 FINAL VERDICT: RISK
 SOURCE-LEVEL VERDICT: PASS
-RUNTIME VERDICT: BLOCKED
-PY_COMPILE: BLOCKED
+RUNTIME VERDICT: RISK UNTIL LIVE SOFT REMOVE RECHECK
+PY_COMPILE: NOT EXECUTED FROM THIS TOOL CONTEXT
 ```
 
 Required manual/runtime check:
 
 ```text
-Admin -> Управление товаром -> Загрузка -> Save batch -> Далее -> Установить цену -> Далее -> Опубликовать -> Далее -> Загруженные партии -> Состояние -> Подробнее -> ← Назад к состоянию -> Все камни
+Admin -> Управление товаром -> Состояние -> Подробнее -> Снять партию с продажи -> confirm no TypeError -> verify active/non-sold rows removed_from_sale -> verify sold rows untouched -> verify public site unchanged until publish
 ```
