@@ -83,7 +83,7 @@ def render_dashboard():
         st.dataframe(warnings, use_container_width=True)
 
     st.markdown("### Быстрые действия")
-    st.write("Управление товаром → Загрузка → Установить цену → Publication Gate → Загруженные партии")
+    st.write("Управление товаром → Загрузка Excel → Формирование цены → Публичный preview → Publication Gate → Партии")
 
 
 def render_settings_page(item: dict | None):
