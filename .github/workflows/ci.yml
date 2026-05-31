@@ -1,6 +1,8 @@
 name: KURGIN Admin CI
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -48,4 +50,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest tests/test_admin_pricing_rules.py
+          pytest tests/test_admin_pricing_rules.py tests/test_publication_rules.py
