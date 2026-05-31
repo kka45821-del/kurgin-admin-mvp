@@ -3,12 +3,12 @@ import json
 import streamlit as st
 
 from admin_page_settings import load_settings, save_settings
-from admin_price_index import render_price_index_table
+from admin_price_index_matrix import render_price_index_matrix
 
 
 def render_price_management_page() -> None:
     st.markdown("### Управление ценами")
-    st.caption("Публичное отображение цен, ручной индекс цен и будущий пересчёт цен по индексу.")
+    st.caption("Публичное отображение цен, матричный индекс USD/ct и будущий пересчёт цен по индексу.")
 
     settings = load_settings()
     commerce = settings.setdefault("commerce", {"public_prices_request_only": False})
@@ -39,4 +39,4 @@ def render_price_management_page() -> None:
         st.code(json.dumps(settings.get("commerce", {}), ensure_ascii=False, indent=2), language="json")
 
     st.divider()
-    render_price_index_table()
+    render_price_index_matrix()
