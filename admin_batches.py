@@ -3,11 +3,21 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from admin_io import STONE_COLS, batch_summary, load_batches, load_stones, normalize_excel, save_batches, save_stones, upsert_batch_log
+from admin_io import STONE_COLS, load_batches, load_stones, normalize_excel, save_batches, save_stones, upsert_batch_log
+
+
+def batch_summary(stones: pd.DataFrame) -> pd.DataFrame:
+    """Backward-compatible local summary for the legacy batches fallback view."""
+    if stones.empty or 'batch_number' not in stones.columns:
+        return pd.DataFrame(columns=['batch_number', 'stones_count'])
+    summary = stones.groupby('batch_number', dropna=False).size().reset_index(name='stones_count')
+    summary['batch_number'] = summary['batch_number'].astype(str)
+    return summary
 
 
 def render_batches_tab() -> None:
     st.subheader('Партии')
+    st.warning('Legacy / fallback view. Основной рабочий контур партий: Управление товаром.')
 
     stones = load_stones()
     batches = load_batches()
@@ -18,9 +28,10 @@ def render_batches_tab() -> None:
         return
 
     if not batches.empty:
-        meta_cols = ['batch_number', 'upload_date', 'supplier_name']
-        meta = batches[meta_cols].drop_duplicates('batch_number', keep='last')
-        summary = summary.merge(meta, on='batch_number', how='left')
+        meta_cols = [col for col in ['batch_number', 'upload_date', 'supplier_name'] if col in batches.columns]
+        if meta_cols and 'batch_number' in meta_cols:
+            meta = batches[meta_cols].drop_duplicates('batch_number', keep='last')
+            summary = summary.merge(meta, on='batch_number', how='left')
 
     st.dataframe(summary, use_container_width=True)
 
@@ -45,8 +56,8 @@ def render_batches_tab() -> None:
             result = pd.concat([rest, edited_part[STONE_COLS]], ignore_index=True)
             save_stones(result)
 
-            supplier = edited_part['supplier_name'].iloc[0] if len(edited_part) else ''
-            upload_date = edited_part['upload_date'].iloc[0] if len(edited_part) else ''
+            supplier = edited_part['supplier_name'].iloc[0] if len(edited_part) and 'supplier_name' in edited_part.columns else ''
+            upload_date = edited_part['upload_date'].iloc[0] if len(edited_part) and 'upload_date' in edited_part.columns else ''
             upsert_batch_log(selected, upload_date, supplier, len(edited_part), 'batch edited')
             st.success(f'Партия {selected} обновлена')
 
@@ -69,7 +80,7 @@ def render_batches_tab() -> None:
         return
 
     replacement_date = st.date_input('Дата замены', value=date.today(), key=f'date_{selected}')
-    old_supplier = str(part['supplier_name'].iloc[0]) if len(part) else ''
+    old_supplier = str(part['supplier_name'].iloc[0]) if len(part) and 'supplier_name' in part.columns else ''
     replacement_supplier = st.text_input('Поставщик', value=old_supplier, key=f'supplier_{selected}')
     replacement_notes = st.text_area('Заметка по замене', key=f'notes_{selected}')
 
