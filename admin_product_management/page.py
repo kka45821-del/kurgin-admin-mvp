@@ -24,18 +24,11 @@ def render_product_edit_placeholder():
 
 
 def render_product_management_page():
-    left_title, right_title = st.columns([1, 4])
-    with left_title:
-        if st.button("← Назад", use_container_width=True):
-            st.session_state["admin_return_dashboard"] = True
-            st.session_state["product_management_view"] = "main"
-            st.rerun()
-    with right_title:
-        st.subheader("Управление товаром")
-        st.caption(
-            "Главная рабочая зона админки: камни, загрузка по фиксированному Excel-шаблону, "
-            "партии, статусы, формирование цены, public preview и публикация."
-        )
+    st.subheader("Управление товаром")
+    st.caption(
+        "Главная рабочая зона админки: камни, загрузка по фиксированному Excel-шаблону, "
+        "партии, статусы, формирование цены, public preview и публикация."
+    )
 
     st.warning("Этот раздел не создаёт checkout, payment, reserve, order, Verify или PDF/report.")
     st.divider()
