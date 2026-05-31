@@ -4,7 +4,7 @@ import streamlit as st
 from admin_io import load_batches, load_stones
 from admin_log import write_admin_action
 
-from .actions import ACTIVE_BATCH_STATUSES, active_batch_mask, archive_all_active_batches, normalized_batch_status
+from .actions import ACTIVE_BATCH_STATUSES, archive_all_active_batches, normalized_batch_status
 from .exports import batch_report_parts, detail_table, excel_bytes
 from .helpers import ensure_columns, safe_name
 
@@ -41,6 +41,7 @@ def render_batch_actions(result: pd.DataFrame, cols: list[str], key_prefix: str)
         if not batch_number:
             continue
         with st.expander(f"Партия {batch_number}", expanded=False):
+            st.caption("Раскрытие партии и Excel export. Подробная страница партии доступна только в разделе Состояние.")
             st.dataframe(pd.DataFrame([row])[cols], use_container_width=True)
             on_site, sold, removed, payments = batch_report_parts(batch_number)
             report = excel_bytes(
@@ -51,19 +52,13 @@ def render_batch_actions(result: pd.DataFrame, cols: list[str], key_prefix: str)
                     "Оплаты поставщику": payments,
                 }
             )
-            a, b = st.columns(2)
-            a.download_button(
+            st.download_button(
                 "Скачать Excel",
                 data=report,
                 file_name=f"KURGIN_batch_{safe_name(batch_number)}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key=f"{key_prefix}_batch_download_{batch_number}",
             )
-            if b.button("Подробнее", key=f"{key_prefix}_batches_detail_{batch_number}"):
-                st.session_state["product_management_view"] = "batch_detail"
-                st.session_state["product_detail_batch"] = batch_number
-                st.session_state["product_batch_detail_return_menu"] = "Загруженные партии"
-                st.rerun()
 
 
 def render_archive_all_button(active_count: int):
@@ -85,7 +80,7 @@ def render_archive_all_button(active_count: int):
 
 def render_product_batches():
     st.markdown("### Загруженные партии")
-    st.caption("Здесь показываются только активные партии: пустой batch_status, uploaded, active или draft.")
+    st.caption("Здесь показываются только активные партии: пустой batch_status, uploaded, active или draft. Подробнее по партии открывается только из раздела Состояние.")
     batches = load_batches()
     stones = load_stones()
     if batches.empty:
@@ -102,7 +97,7 @@ def render_product_batches():
         st.info("Активных загруженных партий нет.")
     else:
         st.dataframe(active[cols], use_container_width=True)
-        st.markdown("#### Действия по активным партиям")
+        st.markdown("#### Раскрыть / скачать Excel")
         render_batch_actions(active, cols, "active")
 
     render_archive_all_button(len(active))
