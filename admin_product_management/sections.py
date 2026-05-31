@@ -57,7 +57,7 @@ def product_public_table() -> pd.DataFrame:
 
 def render_product_all_stones():
     st.markdown("### Все камни")
-    st.caption("Общий Excel-like view всех камней. Массовое опасное редактирование на этом этапе не включено.")
+    st.caption("Общий read-only Excel-like view всех камней. Массовое опасное редактирование не включено.")
     stones = load_stones()
     if stones.empty:
         st.info("Камней пока нет.")
@@ -104,9 +104,32 @@ def render_product_all_stones():
     st.dataframe(result[columns], use_container_width=True)
 
 
-def render_product_edit_placeholder():
-    st.markdown("### Редактирование")
-    st.info("Здесь позже будет безопасное редактирование камней, партий и статусов.")
-    st.write("- массовое опасное редактирование не включено;")
-    st.write("- удаление, rollback и автоматическое изменение данных не добавлены;")
-    st.write("- любые изменения данных требуют отдельного задания и проверки.")
+def render_product_statuses():
+    st.markdown("### Статусы")
+    stones = load_stones()
+    if stones.empty or "current_status" not in stones.columns:
+        st.info("Статусы пока не найдены.")
+        return
+    data = stones["current_status"].fillna("не задано").value_counts().rename_axis("status").reset_index(name="count")
+    st.dataframe(data, use_container_width=True)
+
+
+def render_product_public_preview():
+    st.markdown("### Публичный preview")
+    preview = public_preview(load_stones())
+    st.metric("Публичных камней", len(preview))
+    if preview.empty:
+        st.info("Публичный preview пуст.")
+        return
+    st.dataframe(preview, use_container_width=True)
+
+
+def render_product_showcase_sections():
+    st.markdown("### Разделы витрины")
+    public = public_preview(load_stones())
+    if public.empty or "section" not in public.columns:
+        st.info("Пока нет публичных камней или поля section.")
+        return
+    data = public["section"].fillna("не задано").value_counts().rename_axis("section").reset_index(name="count")
+    st.dataframe(data, use_container_width=True)
+    st.write("MVP: section приходит из Admin/publication layer. Frontend не должен пересчитывать коммерческий смысл раздела.")
