@@ -84,7 +84,7 @@ def render_product_batch_detail(batch_number: str):
 
     if st.button("← Назад к состоянию"):
         st.session_state["product_management_view"] = "state"
-        st.session_state["product_management_menu"] = "Состояние"
+        st.session_state["product_management_next_menu"] = "Состояние"
         st.rerun()
 
     st.markdown(f"### Партия {batch_number}")
