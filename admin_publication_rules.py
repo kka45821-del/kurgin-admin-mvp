@@ -1,5 +1,7 @@
 import pandas as pd
 
+from admin_price_display_settings import public_prices_request_only
+
 PUBLIC_FLAG_COLUMNS = [
     'show_in_catalog',
     'is_mvp_eligible',
@@ -12,9 +14,6 @@ PUBLIC_FLAG_COLUMNS = [
 PUBLIC_ALLOWED_STATUS = 'available'
 VISIBLE_WITHOUT_PRICE_STATUSES = {'missing', 'index_pending', 'index_suggested', 'needs_review', 'request_price'}
 SELLABLE_PRICE_STATUSES = {'confirmed', 'final', 'manual_confirmed', 'approved', 'index_confirmed'}
-
-# Online reservation/payment is a separate future flow.
-# Until that backend exists, sellable stones remain contact/request-price, not online checkout.
 CHECKOUT_FEATURE_ENABLED = False
 
 
@@ -79,11 +78,10 @@ def public_visible_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def publication_mask(df: pd.DataFrame) -> pd.Series:
-    """Backward-compatible alias: public visibility, not sellability."""
     return public_visible_mask(df)
 
 
-def public_reason_series(df: pd.DataFrame, sellable: pd.Series, checkout_enabled: pd.Series) -> pd.Series:
+def public_reason_series(df: pd.DataFrame, sellable: pd.Series, checkout_enabled: pd.Series, request_only_mode: bool = False) -> pd.Series:
     price = number_series(df['price_rub']) if 'price_rub' in df.columns else pd.Series(0, index=df.index)
     price_status = price_status_series(df)
     price_confirmed = boolean_series(df['price_confirmed']) if 'price_confirmed' in df.columns else pd.Series(False, index=df.index)
@@ -96,6 +94,7 @@ def public_reason_series(df: pd.DataFrame, sellable: pd.Series, checkout_enabled
     reason = reason.mask(price_status.isin({'needs_review', 'index_pending', 'index_suggested'}), 'price_needs_review')
     reason = reason.mask(price.le(0), 'price_missing')
     reason = reason.mask(sellable & ~checkout_enabled, 'checkout_not_enabled')
+    reason = reason.mask(request_only_mode & price.gt(0), 'public_price_request_only')
     reason = reason.mask(checkout_enabled, 'checkout_enabled')
     return reason
 
@@ -107,8 +106,9 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         return result
     sellable = public_sellable_mask(result)
-    checkout_enabled = sellable & CHECKOUT_FEATURE_ENABLED
-    is_request_price = ~checkout_enabled
+    request_only_mode = public_prices_request_only()
+    checkout_enabled = sellable & CHECKOUT_FEATURE_ENABLED & ~request_only_mode
+    is_request_price = request_only_mode | ~sellable
 
     result['public_visible'] = True
     result['public_sellable'] = sellable
@@ -116,9 +116,9 @@ def public_preview(df: pd.DataFrame) -> pd.DataFrame:
     result['public_action'] = checkout_enabled.map({True: 'checkout', False: 'request_price'})
     result['is_request_price'] = is_request_price
     result['public_state'] = 'request_price'
-    result.loc[sellable & ~checkout_enabled, 'public_state'] = 'sellable_contact'
+    result.loc[sellable & ~checkout_enabled & ~request_only_mode, 'public_state'] = 'sellable_contact'
     result.loc[checkout_enabled, 'public_state'] = 'checkout'
-    result['public_reason'] = public_reason_series(result, sellable, checkout_enabled)
+    result['public_reason'] = public_reason_series(result, sellable, checkout_enabled, request_only_mode)
     return result
 
 
