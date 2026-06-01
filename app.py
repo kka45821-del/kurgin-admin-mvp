@@ -15,19 +15,17 @@ st.markdown(
         --kurgin-ink: #1c1a18;
         --kurgin-muted: #77716a;
         --kurgin-line: #e8e2d8;
-        --kurgin-soft: #fbfaf7;
         --kurgin-gold: #b08a4a;
-        --kurgin-gold-soft: #f3eadb;
     }
 
     .block-container {
-        padding-top: 2.4rem;
+        padding-top: 2rem;
         padding-bottom: 3rem;
         max-width: 1180px;
     }
 
     [data-testid="stSidebar"] {
-        min-width: 280px;
+        min-width: 300px;
         background: linear-gradient(180deg, #fbfaf7 0%, #f4efe6 100%);
         border-right: 1px solid var(--kurgin-line);
     }
@@ -40,6 +38,9 @@ st.markdown(
         display: none !important;
         visibility: hidden !important;
         pointer-events: none !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
     }
 
     .kurgin-sidebar-title {
@@ -48,11 +49,6 @@ st.markdown(
         letter-spacing: .03em;
         color: var(--kurgin-ink);
         margin: 0.6rem 0 1.2rem 0;
-    }
-
-    .stRadio > label {
-        font-size: 0.78rem;
-        color: var(--kurgin-muted);
     }
 
     div[role="radiogroup"] {
@@ -68,10 +64,9 @@ st.markdown(
         border-radius: 10px;
         padding: 14px 16px;
         margin: 10px 0;
-        min-height: 54px;
+        min-height: 56px;
         display: flex;
         align-items: center;
-        box-shadow: 0 1px 0 rgba(30, 25, 20, .03);
     }
 
     div[role="radiogroup"] label:hover {
@@ -80,36 +75,36 @@ st.markdown(
     }
 
     div[role="radiogroup"] label p {
-        font-size: 1.04rem;
+        font-size: 1.06rem;
         font-weight: 700;
         color: var(--kurgin-ink);
     }
 
     .kurgin-note {
         color: var(--kurgin-muted);
-        font-size: 0.92rem;
-        line-height: 1.45;
+        font-size: 0.88rem;
+        line-height: 1.4;
     }
 
     .kurgin-hero {
         border: 1px solid var(--kurgin-line);
         background: linear-gradient(135deg, #ffffff 0%, #fbf7ef 100%);
-        border-radius: 18px;
-        padding: 22px 24px;
-        margin-bottom: 22px;
+        border-radius: 16px;
+        padding: 18px 20px;
+        margin-bottom: 16px;
     }
 
     .kurgin-hero h1 {
         color: var(--kurgin-ink);
-        font-size: 2.1rem;
-        margin: 0 0 6px 0;
+        font-size: 1.9rem;
+        margin: 0 0 4px 0;
         letter-spacing: .015em;
     }
 
     .kurgin-chip-row {
         display: flex;
-        gap: 10px;
-        margin: 12px 0 2px 0;
+        gap: 8px;
+        margin: 10px 0 0 0;
         flex-wrap: wrap;
     }
 
@@ -117,32 +112,32 @@ st.markdown(
         border: 1px solid #d8c6a6;
         background: #fffaf0;
         color: #33291a;
-        border-radius: 12px;
-        padding: 10px 12px;
-        min-width: 126px;
-        font-size: .86rem;
-        line-height: 1.25;
+        border-radius: 10px;
+        padding: 8px 10px;
+        min-width: 112px;
+        font-size: .78rem;
+        line-height: 1.18;
     }
 
     .kurgin-chip strong {
         display: block;
-        font-size: .95rem;
+        font-size: .86rem;
         margin-bottom: 2px;
     }
 
     .kurgin-color-title {
-        margin: 26px 0 8px 0;
-        padding: 12px 14px;
+        margin: 18px 0 6px 0;
+        padding: 10px 12px;
         border: 1px solid var(--kurgin-line);
         border-left: 4px solid var(--kurgin-gold);
-        border-radius: 12px;
+        border-radius: 10px;
         background: #ffffff;
         font-weight: 800;
         color: var(--kurgin-ink);
     }
 
     .stDataFrame, .stDataEditor {
-        border-radius: 14px;
+        border-radius: 12px;
         overflow: hidden;
     }
     </style>
@@ -164,54 +159,55 @@ page = st.sidebar.radio(
 
 st.sidebar.caption("Режим разработки: вход без пароля.")
 
-colors = ["D", "E", "F", "G", "H", "I", "J"]
+colors = ["D", "E", "F", "G"]
 clarities = ["IF", "VVS1", "VVS2", "VS1", "VS2", "SI1"]
-weight_ranges = ["0.30–0.49", "0.50–0.69", "0.70–0.89", "0.90–0.99", "1.00–1.49", "1.50–1.99", "2.00–2.99", "3.00+"]
+weight_ranges = [
+    "1–1.49",
+    "1.5–1.99",
+    "2–2.49",
+    "2.5–2.99",
+    "3–3.49",
+    "3.5–3.99",
+    "4–4.49",
+    "4.5–4.99",
+]
 score_bands = [
-    ("Standard", "80–89.99", "Стандартный"),
-    ("High", "90–94.99", "Высокое качество"),
+    ("Elite", "98.5–100", "Элитный"),
     ("Premium", "95–98.49", "Премиальный"),
-    ("Top", "98.5+", "Лучший диапазон"),
+    ("High", "90–94.99", "Высокое качество"),
+    ("Standard", "80–89.99", "Стандартный"),
+    ("Fair", "70–79.99", "Среднее качество"),
+    ("Poor", "50–69.99", "Низкое качество"),
+    ("Rejected", "0–49.99", "Не рекомендуется"),
 ]
 
-base_by_color = {
-    "D": 145000,
-    "E": 138000,
-    "F": 130000,
-    "G": 118000,
-    "H": 106000,
-    "I": 95000,
-    "J": 84000,
-}
-
-clarity_factor = {
-    "IF": 1.00,
-    "VVS1": 0.95,
-    "VVS2": 0.90,
-    "VS1": 0.84,
-    "VS2": 0.79,
-    "SI1": 0.68,
-}
-
-weight_factor = {
-    "0.30–0.49": 0.42,
-    "0.50–0.69": 0.55,
-    "0.70–0.89": 0.68,
-    "0.90–0.99": 0.82,
-    "1.00–1.49": 1.00,
-    "1.50–1.99": 1.18,
-    "2.00–2.99": 1.42,
-    "3.00+": 1.74,
-}
+public_index_rows = [
+    ("D", "IF", "1–1.49", 250), ("D", "IF", "1.5–1.99", 380), ("D", "IF", "2–2.49", 480),
+    ("D", "VVS1", "1–1.49", 125), ("D", "VVS1", "1.5–1.99", 150), ("D", "VVS1", "2–2.49", 170), ("D", "VVS1", "2.5–2.99", 210), ("D", "VVS1", "3–3.49", 245), ("D", "VVS1", "4–4.49", 325),
+    ("D", "VVS2", "1–1.49", 110), ("D", "VVS2", "1.5–1.99", 115), ("D", "VVS2", "2–2.49", 120), ("D", "VVS2", "2.5–2.99", 125), ("D", "VVS2", "3–3.49", 135), ("D", "VVS2", "3.5–3.99", 145), ("D", "VVS2", "4–4.49", 160), ("D", "VVS2", "4.5–4.99", 170),
+    ("D", "VS1", "1–1.49", 100), ("D", "VS1", "1.5–1.99", 100), ("D", "VS1", "2–2.49", 105), ("D", "VS1", "2.5–2.99", 115), ("D", "VS1", "3–3.49", 125), ("D", "VS1", "3.5–3.99", 130),
+    ("E", "IF", "1–1.49", 185),
+    ("E", "VVS1", "1–1.49", 120), ("E", "VVS1", "1.5–1.99", 145), ("E", "VVS1", "2–2.49", 150), ("E", "VVS1", "2.5–2.99", 160), ("E", "VVS1", "3–3.49", 165),
+    ("E", "VVS2", "1–1.49", 105), ("E", "VVS2", "1.5–1.99", 110), ("E", "VVS2", "2–2.49", 105), ("E", "VVS2", "2.5–2.99", 100), ("E", "VVS2", "3–3.49", 100),
+    ("E", "VS1", "1–1.49", 95), ("E", "VS1", "1.5–1.99", 98), ("E", "VS1", "2–2.49", 98), ("E", "VS1", "2.5–2.99", 98), ("E", "VS1", "3–3.49", 98), ("E", "VS1", "3.5–3.99", 100), ("E", "VS1", "4–4.49", 100), ("E", "VS1", "4.5–4.99", 105),
+    ("F", "IF", "1–1.49", 150), ("F", "IF", "1.5–1.99", 150),
+    ("F", "VVS1", "1–1.49", 115), ("F", "VVS1", "1.5–1.99", 135), ("F", "VVS1", "2–2.49", 145), ("F", "VVS1", "2.5–2.99", 155), ("F", "VVS1", "3–3.49", 155), ("F", "VVS1", "4.5–4.99", 175),
+    ("F", "VVS2", "1–1.49", 100), ("F", "VVS2", "1.5–1.99", 100), ("F", "VVS2", "2–2.49", 100), ("F", "VVS2", "2.5–2.99", 100), ("F", "VVS2", "3–3.49", 100), ("F", "VVS2", "3.5–3.99", 100), ("F", "VVS2", "4–4.49", 105), ("F", "VVS2", "4.5–4.99", 105),
+    ("F", "VS1", "1–1.49", 95), ("F", "VS1", "1.5–1.99", 95), ("F", "VS1", "2–2.49", 95), ("F", "VS1", "2.5–2.99", 95), ("F", "VS1", "3–3.49", 95), ("F", "VS1", "3.5–3.99", 98), ("F", "VS1", "4–4.49", 100), ("F", "VS1", "4.5–4.99", 100),
+    ("G", "VVS1", "2–2.49", 110),
+    ("G", "VVS2", "3–3.49", 95),
+    ("G", "VS1", "1.5–1.99", 95), ("G", "VS1", "2–2.49", 95), ("G", "VS1", "3–3.49", 95),
+]
 
 
 def make_color_matrix(color: str) -> pd.DataFrame:
+    by_key = {(c, clarity, band): value for c, clarity, band, value in public_index_rows}
     rows = []
     for clarity in clarities:
         row = {"Clarity": clarity}
-        for weight in weight_ranges:
-            value = base_by_color[color] * clarity_factor[clarity] * weight_factor[weight]
-            row[weight] = int(round(value / 1000) * 1000)
+        for band in weight_ranges:
+            value = by_key.get((color, clarity, band))
+            row[band] = "—" if value is None else value
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -221,25 +217,21 @@ if page == "Индекс таблица":
         """
         <div class="kurgin-hero">
             <h1>KURGIN Index Table</h1>
-            <div class="kurgin-note">Сухой рабочий скелет внутренней индекс-таблицы. Это не публичная цена камня и не публичная витрина.</div>
+            <div class="kurgin-note">Внутренняя индекс-таблица админки. Сухой скелет: без категории, без формы, без базы данных.</div>
             <div class="kurgin-chip-row">
-                <div class="kurgin-chip"><strong>Standard</strong>80–89.99<br>Стандартный</div>
-                <div class="kurgin-chip"><strong>High</strong>90–94.99<br>Высокое качество</div>
-                <div class="kurgin-chip"><strong>Premium</strong>95–98.49<br>Премиальный</div>
-                <div class="kurgin-chip"><strong>Top</strong>98.5+<br>Лучший диапазон</div>
+        """
+        + "".join(
+            f'<div class="kurgin-chip"><strong>{name}</strong>{range_label}<br>{ru}</div>'
+            for name, range_label, ru in score_bands
+        )
+        + """
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    top1, top2 = st.columns([1, 1])
-    with top1:
-        st.selectbox("Версия индекса", ["Draft June 2026", "Active May 2026"], index=0)
-    with top2:
-        st.selectbox("Категория", ["Main stones", "Small stones", "Pairs", "Side stones", "Exclusive"], index=0)
-
-    st.markdown('<div class="kurgin-note">Все цветовые блоки раскрыты сразу. Внутри каждого блока: Clarity × диапазон веса, значения = внутренний ориентир ₽/ct.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="kurgin-note">Все цветовые блоки раскрыты сразу. Внутри каждого блока: Clarity × реальный диапазон веса, значения = внутренний ориентир.</div>', unsafe_allow_html=True)
 
     for color in colors:
         st.markdown(f'<div class="kurgin-color-title">Цвет {color}</div>', unsafe_allow_html=True)
@@ -257,11 +249,11 @@ if page == "Индекс таблица":
     with c2:
         st.button("Reset", use_container_width=True)
     with c3:
-        st.caption("Пока без базы данных и без пароля. Это только сухой UI-скелет таблицы.")
+        st.caption("Пока без сохранения в базу. Значения редактируются только на экране.")
 
 elif page == "Камни":
     st.title("Камни")
-    st.info("Раздел пока не подключён. Сейчас меняем только внешний вид индекс-таблицы.")
+    st.info("Раздел пока не подключён. Сейчас делаем только индекс-таблицу.")
 
 elif page == "Настройки":
     st.title("Настройки")
