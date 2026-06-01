@@ -1,4 +1,0 @@
-section,shape,carat_from,carat_to,color,clarity,score_range,public_index_rub_per_ct,is_active,comment
-main,Round,1.00,1.50,D,VS1,standard,780000,true,public benchmark ₽/ct
-main,Round,1.50,2.00,D,VS1,standard,820000,true,public benchmark ₽/ct
-large,Round,3.00,3.50,E,VVS2,high,1450000,true,public benchmark ₽/ct
