@@ -12,22 +12,31 @@ st.markdown(
     """
     <style>
     :root {
-        --kurgin-ink: #1c1a18;
-        --kurgin-muted: #77716a;
-        --kurgin-line: #e8e2d8;
-        --kurgin-gold: #b08a4a;
+        --kg-navy: #0b1220;
+        --kg-blue: #13233d;
+        --kg-gold: #d6b46d;
+        --kg-muted: #64748b;
+        --kg-bg: #ffffff;
+        --kg-soft: #f8fafc;
+        --kg-line: #e5e7eb;
     }
 
     .block-container {
-        padding-top: 2rem;
-        padding-bottom: 3rem;
-        max-width: 1180px;
+        padding-top: 1.3rem;
+        padding-bottom: 2rem;
+        max-width: 1220px;
     }
 
     [data-testid="stSidebar"] {
-        min-width: 300px;
-        background: linear-gradient(180deg, #fbfaf7 0%, #f4efe6 100%);
-        border-right: 1px solid var(--kurgin-line);
+        min-width: 340px !important;
+        width: 340px !important;
+        background: #f8fafc;
+        border-right: 1px solid var(--kg-line);
+    }
+
+    [data-testid="stSidebar"] section {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
     }
 
     [data-testid="stSidebarNav"],
@@ -44,101 +53,113 @@ st.markdown(
     }
 
     .kurgin-sidebar-title {
-        font-size: 1.35rem;
+        font-size: 1.32rem;
         font-weight: 800;
         letter-spacing: .03em;
-        color: var(--kurgin-ink);
-        margin: 0.6rem 0 1.2rem 0;
+        color: var(--kg-navy);
+        margin: 0.4rem 0 1rem 0;
     }
 
     div[role="radiogroup"] {
-        width: 100%;
+        width: 100% !important;
     }
 
+    div[role="radiogroup"] > label,
     div[role="radiogroup"] label {
-        width: 100%;
-        min-width: 100%;
-        box-sizing: border-box;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
         background: #ffffff;
-        border: 1px solid var(--kurgin-line);
+        border: 1px solid var(--kg-line);
         border-radius: 10px;
-        padding: 14px 16px;
-        margin: 10px 0;
-        min-height: 56px;
-        display: flex;
+        padding: 13px 16px !important;
+        margin: 8px 0 !important;
+        min-height: 54px;
+        display: flex !important;
         align-items: center;
+        box-shadow: 0 10px 30px rgba(15,23,42,.04);
     }
 
     div[role="radiogroup"] label:hover {
-        border-color: #c6a66c;
+        border-color: rgba(214,180,109,.75);
         background: #fffaf0;
     }
 
     div[role="radiogroup"] label p {
-        font-size: 1.06rem;
+        font-size: 1.05rem;
         font-weight: 700;
-        color: var(--kurgin-ink);
+        color: var(--kg-navy);
     }
 
     .kurgin-note {
-        color: var(--kurgin-muted);
-        font-size: 0.88rem;
-        line-height: 1.4;
+        color: var(--kg-muted);
+        font-size: 0.82rem;
+        line-height: 1.3;
     }
 
     .kurgin-hero {
-        border: 1px solid var(--kurgin-line);
-        background: linear-gradient(135deg, #ffffff 0%, #fbf7ef 100%);
+        border: 1px solid #334155;
+        background: radial-gradient(circle at top left, #213b67 0%, #0b1220 50%, #070b12 100%);
+        color: #ffffff;
         border-radius: 16px;
-        padding: 18px 20px;
-        margin-bottom: 16px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 18px 45px rgba(15,23,42,.16);
     }
 
     .kurgin-hero h1 {
-        color: var(--kurgin-ink);
-        font-size: 1.9rem;
-        margin: 0 0 4px 0;
+        color: #ffffff;
+        font-size: 1.65rem;
+        margin: 0 0 3px 0;
         letter-spacing: .015em;
+    }
+
+    .kurgin-hero .kurgin-note {
+        color: #cbd5e1;
     }
 
     .kurgin-chip-row {
         display: flex;
-        gap: 8px;
-        margin: 10px 0 0 0;
+        gap: 6px;
+        margin: 8px 0 0 0;
         flex-wrap: wrap;
     }
 
     .kurgin-chip {
-        border: 1px solid #d8c6a6;
-        background: #fffaf0;
-        color: #33291a;
-        border-radius: 10px;
-        padding: 8px 10px;
-        min-width: 112px;
-        font-size: .78rem;
-        line-height: 1.18;
+        border: 1px solid rgba(214,180,109,.45);
+        background: rgba(214,180,109,.08);
+        color: #f8e8bd;
+        border-radius: 999px;
+        padding: 6px 9px;
+        min-width: 90px;
+        font-size: .70rem;
+        line-height: 1.08;
     }
 
     .kurgin-chip strong {
         display: block;
-        font-size: .86rem;
-        margin-bottom: 2px;
+        font-size: .77rem;
+        margin-bottom: 1px;
+        color: #fff6d8;
     }
 
     .kurgin-color-title {
-        margin: 18px 0 6px 0;
-        padding: 10px 12px;
-        border: 1px solid var(--kurgin-line);
-        border-left: 4px solid var(--kurgin-gold);
-        border-radius: 10px;
+        margin: 10px 0 4px 0;
+        padding: 7px 10px;
+        border: 1px solid var(--kg-line);
+        border-left: 4px solid var(--kg-gold);
+        border-radius: 9px;
         background: #ffffff;
         font-weight: 800;
-        color: var(--kurgin-ink);
+        color: var(--kg-navy);
+        font-size: .92rem;
     }
 
     .stDataFrame, .stDataEditor {
-        border-radius: 12px;
+        border-radius: 10px;
         overflow: hidden;
+        margin-bottom: 2px;
     }
     </style>
     """,
@@ -240,6 +261,7 @@ if page == "Индекс таблица":
             hide_index=True,
             use_container_width=True,
             num_rows="fixed",
+            height=248,
             key=f"index_color_{color}",
         )
 
