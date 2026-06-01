@@ -32,9 +32,15 @@ st.markdown(
         border-right: 1px solid var(--kurgin-line);
     }
 
-    [data-testid="stSidebarNav"] {display: none;}
-    [data-testid="collapsedControl"] {display: none;}
-    button[kind="header"] {display: none;}
+    [data-testid="stSidebarNav"],
+    [data-testid="collapsedControl"],
+    button[kind="header"],
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stBaseButton-header"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
 
     .kurgin-sidebar-title {
         font-size: 1.35rem;
@@ -49,13 +55,20 @@ st.markdown(
         color: var(--kurgin-muted);
     }
 
+    div[role="radiogroup"] {
+        width: 100%;
+    }
+
     div[role="radiogroup"] label {
+        width: 100%;
+        min-width: 100%;
+        box-sizing: border-box;
         background: #ffffff;
         border: 1px solid var(--kurgin-line);
-        border-radius: 12px;
-        padding: 12px 14px;
-        margin: 8px 0;
-        min-height: 48px;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin: 10px 0;
+        min-height: 54px;
         display: flex;
         align-items: center;
         box-shadow: 0 1px 0 rgba(30, 25, 20, .03);
@@ -67,8 +80,8 @@ st.markdown(
     }
 
     div[role="radiogroup"] label p {
-        font-size: 1.02rem;
-        font-weight: 650;
+        font-size: 1.04rem;
+        font-weight: 700;
         color: var(--kurgin-ink);
     }
 
