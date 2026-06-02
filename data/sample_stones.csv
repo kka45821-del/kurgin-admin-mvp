@@ -1,0 +1,21 @@
+stone_id,supplier,origin,type,shape,carat,color,clarity,cut,polish,symmetry,fluorescence,certificate,price_usd,availability,notes
+KRG-001,Alpine Gems,Botswana,Diamond,Round,1.2,D,VVS1,Excellent,Excellent,Excellent,None,GIA,18200,Available,"Top white stone, high confidence"
+KRG-002,North Star,South Africa,Diamond,Oval,1.55,F,VS1,Excellent,Very Good,Excellent,Faint,GIA,21400,Available,Balanced premium oval
+KRG-003,Kabul Estate,Afghanistan,Emerald,Emerald,2.1,Green,Eye Clean,Very Good,Very Good,Good,None,GRS,9800,On Memo,"Minor oil, strong color"
+KRG-004,Sierra Supply,Sri Lanka,Sapphire,Cushion,2.85,Blue,Eye Clean,Very Good,Good,Good,None,SSEF,16500,Reserved,Royal blue tone
+KRG-005,Aurora Stones,Mozambique,Ruby,Oval,1.4,Red,Eye Clean,Excellent,Very Good,Very Good,None,Gubelin,22600,Available,Unheated candidate
+KRG-006,North Star,Canada,Diamond,Princess,0.9,G,VS2,Very Good,Very Good,Very Good,Medium,IGI,5200,Available,Good entry point
+KRG-007,Baltic Trade,Brazil,Aquamarine,Pear,5.2,Blue,Eye Clean,Good,Good,Good,None,Local,3900,Available,Large commercial stone
+KRG-008,Alpine Gems,Namibia,Diamond,Round,2.01,H,SI1,Excellent,Excellent,Very Good,Strong,GIA,25100,Available,Check fluorescence impact
+KRG-009,Sierra Supply,Madagascar,Sapphire,Round,1.75,Blue,Included,Good,Good,Good,None,AIGS,4700,Available,Included but attractive price
+KRG-010,Aurora Stones,Tanzania,Tanzanite,Cushion,4.6,Blue,Eye Clean,Very Good,Good,Good,None,Local,7200,Available,Deep saturation
+KRG-011,Alpine Gems,Australia,Diamond,Marquise,1.1,I,VS2,Good,Good,Good,Faint,IGI,6100,Reserved,Needs comparison
+KRG-012,Kabul Estate,Colombia,Emerald,Octagon,1.8,Green,Eye Clean,Very Good,Very Good,Good,None,Gubelin,15800,Available,High transparency
+KRG-013,North Star,Lesotho,Diamond,Round,0.7,E,IF,Excellent,Excellent,Excellent,None,GIA,8800,Available,Small but very high quality
+KRG-014,Baltic Trade,Thailand,Ruby,Cushion,2.2,Red,Included,Good,Good,Fair,None,AIGS,7400,Pending,Treatments to verify
+KRG-015,Sierra Supply,Sri Lanka,Sapphire,Oval,3.1,Blue,Eye Clean,Excellent,Very Good,Very Good,None,SSEF,28400,Available,Investment grade sample
+KRG-016,Aurora Stones,India,Diamond,Pear,1.32,J,SI2,Very Good,Good,Good,Medium,IGI,4600,Available,Price-driven option
+KRG-017,Alpine Gems,Botswana,Diamond,Round,1.8,D,VS1,Excellent,Excellent,Excellent,None,GIA,33600,Available,Premium benchmark
+KRG-018,Kabul Estate,Zambia,Emerald,Emerald,3.4,Green,Included,Good,Good,Good,None,GRS,11200,On Memo,Commercial quality
+KRG-019,North Star,South Africa,Diamond,Cushion,1.05,F,VVS2,Excellent,Excellent,Very Good,Faint,GIA,12800,Sold,Sold reference
+KRG-020,Baltic Trade,Vietnam,Spinel,Oval,2.65,Pink,Eye Clean,Very Good,Very Good,Good,None,GRS,9400,Available,Niche demand

@@ -1,0 +1,17 @@
+[project]
+name = "kurgin-platform"
+version = "0.1.0"
+description = "Professional no-payment MVP for KURGIN stone catalog, scoring and analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "KURGIN" }]
+license = { text = "Proprietary" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

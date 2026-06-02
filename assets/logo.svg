@@ -1,0 +1,6 @@
+<svg viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KURGIN logo">
+  <rect x="8" y="8" width="80" height="80" rx="24" fill="#0F766E"/>
+  <path d="M48 19L74 43L48 78L22 43L48 19Z" fill="#F8FAFC"/>
+  <path d="M22 43H74M34 43L48 19L62 43M34 43L48 78L62 43" stroke="#0F766E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M35 31L48 19L61 31" stroke="#CCFBF1" stroke-width="3" stroke-linecap="round"/>
+</svg>
