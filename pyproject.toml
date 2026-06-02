@@ -1,0 +1,12 @@
+[project]
+name = "cvdlab-platform"
+version = "0.1.0"
+description = "CVDLAB/KURGIN platform V1 core"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
