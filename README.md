@@ -1,71 +1,56 @@
-# KURGIN Admin MVP
+# CVDLAB / KURGIN Platform
 
-Минимальная админка KURGIN для поэтапной разработки.
+PostgreSQL-first, API-first foundation for CVDLAB/KURGIN.
 
-## Назначение репозитория
+## Domains
 
-Этот репозиторий используется для постепенной сборки админки KURGIN. Сначала добавляется самый простой рабочий экран, затем админка будет расширяться по подтверждённым шагам.
-
-## Текущий первый шаг
-
-Сейчас собрана стартовая версия админки:
-
-- первая страница по умолчанию: Index Table
-- левая навигация из 3 пунктов
-- вход без пароля на этапе разработки
-- без базы данных на текущем шаге
-- без подключения публичного сайта на текущем шаге
-- без Analyzer на текущем шаге
-- без каталога камней на текущем шаге
-- без оплат и пользователей на текущем шаге
-
-Эти ограничения описывают только текущий этап разработки. Они не запрещают расширение админки дальше.
-
-## Что есть сейчас
-
-Левое меню:
-
-1. Индекс таблица
-2. Камни
-3. Настройки
-
-Первая страница по умолчанию:
-
-- KURGIN Index Table
-- выбор версии индекса
-- выбор диапазона веса
-- выбор категории
-- матрица Color × Clarity
-- значения в ячейках = внутренний ориентир ₽/ct
-
-## Принцип разработки
-
-Streamlit на этом этапе используется как быстрый экран для разработки админки.
-
-Рабочее правило:
-
-- Streamlit = интерфейс / экран
-- логика KURGIN = отдельные функции и модули
-- данные = позже отдельное хранилище
-- домен = позже через нормальный hosting / backend / frontend
-
-Это нужно, чтобы проект не был жёстко привязан к Streamlit и чтобы в будущем админку можно было перенести на домен или в другую техническую архитектуру без полной переделки логики.
-
-## Важно
-
-Дизайн и интерфейсные решения в этом репозитории относятся только к админке KURGIN.
-
-Внешний вид админки не определяет дизайн публичного сайта, каталога, инструментов, мобильной версии или будущих пользовательских интерфейсов платформы.
-
-## Запуск локально
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
+```text
+cvdlab.ru        public platform
+admin.cvdlab.ru  admin UI
+api.cvdlab.ru    backend API
 ```
 
-## Важно по Index Table
+## V1 Core
 
-Index Table — это внутренняя таблица админки. Это не публичная цена конкретного камня и не публичная витрина.
+- FastAPI backend.
+- Streamlit Admin v2 shell.
+- PostgreSQL required.
+- Native auth foundation.
+- Roles / policies / entitlements foundation.
+- Cart / orders / mock payment foundation.
+- Partner cabinet foundation with RU / EN / zh-CN / HY.
+- KURGIN Index public ₽/ct contract.
+- Pricing formula v0.2-lite with 3 price channels.
+- Safe public catalog / public index / site settings snapshots.
+- Public site patch adapters.
 
-Код добавляется маленькими проверяемыми шагами. Новые разделы подключаются только после отдельного решения, чтобы не смешивать текущий рабочий экран с будущими частями платформы.
+## Safe defaults
+
+```text
+REAL_PAYMENT_PROVIDER_ENABLED=false
+PUBLIC_CHECKOUT_ENABLED=false
+SPECIALIST_CHECKOUT_ENABLED=false
+PARTNER_REGISTRATION_ENABLED=false
+ANALYZER_PAYMENTS_ENABLED=false
+PUBLIC_PRICE_DISPLAY_ENABLED=false
+PUBLIC_INDEX_ENABLED=true
+MOCK_PAYMENTS_ENABLED=true
+```
+
+## Local start
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then:
+
+```bash
+alembic -c migrations/alembic.ini upgrade head
+python scripts/create_owner.py --email owner@cvdlab.ru --password 'change-me'
+```
+
+## Rule
+
+Do not expose internal/supplier/specialist/admin fields in public snapshots.
