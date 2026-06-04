@@ -42,15 +42,30 @@ def _is_colored_future_section(color_value: str) -> bool:
 
 
 def get_template_version(system_df: pd.DataFrame) -> str:
+    """Safely extract version/service info from the System sheet.
+
+    Streamlit Cloud / pandas versions can be strict about non-string values
+    inside row-wise apply. This implementation avoids row-wise apply and
+    explicitly converts every cell to a safe string.
+    """
     if system_df is None or system_df.empty:
         return ""
+
     candidates = ["Formula Output Version", "Engine Version", "Output Version", "Template Version"]
-    for field in candidates:
-        matches = system_df[system_df.astype(str).apply(lambda row: field in " ".join(row.values), axis=1)]
-        if not matches.empty:
-            row = matches.iloc[0]
-            values = [str(v) for v in row.values if str(v).strip() and str(v) != "nan"]
+
+    for _, row in system_df.iterrows():
+        values = []
+        for value in row.tolist():
+            if pd.isna(value):
+                continue
+            text_value = str(value).strip()
+            if text_value and text_value.lower() != "nan":
+                values.append(text_value)
+
+        joined = " ".join(values)
+        if any(field in joined for field in candidates):
             return " | ".join(values[:4])
+
     return ""
 
 
