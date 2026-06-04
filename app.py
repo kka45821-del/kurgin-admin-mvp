@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from modules.paths import ensure_dirs
-from modules.storage import ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log
+from modules.storage import ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, get_shipment_delete_preview, delete_shipment_completely
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version
 from modules.import_commit import commit_import
 
@@ -240,7 +240,33 @@ elif page == "Поставки":
         st.info("Поставок пока нет.")
     else:
         show_cols = ["shipment_id", "supplier_name", "shipment_date", "shipment_name", "currency", "total_purchase_cost", "advance_paid", "created_at", "original_filename"]
-        compact_table(shipments, show_cols, height=420)
+        compact_table(shipments, show_cols, height=360)
+
+        st.divider()
+        st.subheader("Опасная команда: удалить поставку полностью")
+        st.warning("Удаление уберёт поставку, камни этой поставки, запись импорта и raw-файлы. Перед удалением будет создан backup.")
+
+        shipment_ids = sorted(shipments["shipment_id"].astype(str).tolist())
+        selected_delete_id = st.selectbox("Поставка для удаления", shipment_ids)
+        delete_preview = get_shipment_delete_preview(selected_delete_id)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Камней будет удалено", delete_preview["stones_count"])
+        c2.metric("Строк поставки", delete_preview["shipment_rows"])
+        c3.metric("Строк import_log", delete_preview["log_rows"])
+        c4.metric("Raw-папка", "есть" if delete_preview["raw_dir_exists"] else "нет")
+        st.caption(f"Raw-папка: {delete_preview['raw_dir']}")
+
+        confirm_delete = st.text_input(f"Для подтверждения введите номер поставки: {selected_delete_id}")
+        if st.button("Удалить поставку полностью", type="primary", disabled=(confirm_delete != selected_delete_id)):
+            result = delete_shipment_completely(selected_delete_id)
+            st.success("Поставка удалена полностью.")
+            st.write(f"Удалено камней: {result['stones_deleted']}")
+            st.write(f"Удалено строк поставки: {result['shipment_rows_deleted']}")
+            st.write(f"Удалено строк import_log: {result['log_rows_deleted']}")
+            st.write(f"Raw-папка удалена: {'да' if result['raw_deleted'] else 'нет'}")
+            st.write(f"Backup: {result['backup_dir']}")
+            st.rerun()
 
 elif page == "Камни":
     st.title("Камни")

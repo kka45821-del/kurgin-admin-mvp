@@ -97,3 +97,62 @@ def generate_import_id() -> str:
 
     next_num = max(nums) + 1 if nums else 1
     return f"{prefix}{next_num:03d}"
+
+
+
+def get_shipment_delete_preview(import_id: str) -> dict:
+    """Return counts/files affected by full shipment deletion."""
+    ensure_data_files()
+    stones = read_stones()
+    shipments = read_shipments()
+    log = read_import_log()
+    raw_dir = __import__('modules.paths', fromlist=['RAW_DIR']).RAW_DIR / import_id
+
+    return {
+        "import_id": import_id,
+        "stones_count": int((stones["shipment_id"].astype(str) == import_id).sum()) if "shipment_id" in stones.columns else 0,
+        "shipment_rows": int((shipments["shipment_id"].astype(str) == import_id).sum()) if "shipment_id" in shipments.columns else 0,
+        "log_rows": int((log["import_id"].astype(str) == import_id).sum()) if "import_id" in log.columns else 0,
+        "raw_dir_exists": raw_dir.exists(),
+        "raw_dir": str(raw_dir),
+    }
+
+
+def delete_shipment_completely(import_id: str) -> dict:
+    """Delete one shipment, its stones, import log rows, and raw folder after backup."""
+    ensure_data_files()
+    from .paths import RAW_DIR
+    backup_dir = backup_existing_files(f"before_delete_{import_id}")
+
+    stones = read_stones()
+    shipments = read_shipments()
+    log = read_import_log()
+
+    stones_before = len(stones)
+    shipments_before = len(shipments)
+    log_before = len(log)
+
+    if "shipment_id" in stones.columns:
+        stones = stones[stones["shipment_id"].astype(str) != import_id]
+    if "shipment_id" in shipments.columns:
+        shipments = shipments[shipments["shipment_id"].astype(str) != import_id]
+    if "import_id" in log.columns:
+        log = log[log["import_id"].astype(str) != import_id]
+
+    atomic_write_csv(stones, STONES_FILE)
+    atomic_write_csv(shipments, SHIPMENTS_FILE)
+    atomic_write_csv(log, IMPORT_LOG_FILE)
+
+    raw_dir = RAW_DIR / import_id
+    raw_deleted = False
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+        raw_deleted = True
+
+    return {
+        "backup_dir": str(backup_dir),
+        "stones_deleted": stones_before - len(stones),
+        "shipment_rows_deleted": shipments_before - len(shipments),
+        "log_rows_deleted": log_before - len(log),
+        "raw_deleted": raw_deleted,
+    }
