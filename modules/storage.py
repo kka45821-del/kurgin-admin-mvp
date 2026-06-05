@@ -505,12 +505,26 @@ def _float_value(value, default: float = 0.0) -> float:
         return default
 
 
+def _has_positive_price(value) -> bool:
+    """Supplier price must be filled and greater than zero to calculate downstream prices."""
+    try:
+        text = str(value).strip().replace(",", ".")
+        if not text:
+            return False
+        return float(text) > 0
+    except Exception:
+        return False
+
+
 def calculate_root_price_table() -> pd.DataFrame:
     """Calculate root price-per-carat chain in USD.
 
     6B scope only:
     supplier -> internal -> start -> working -> public.
     No KURGIN Score, no Index, no stone-level final price.
+
+    Important rule:
+    if supplier price is empty or 0, downstream prices are not calculated.
     """
     ensure_price_files()
 
@@ -536,7 +550,24 @@ def calculate_root_price_table() -> pd.DataFrame:
     rows = []
     for _, row in supplier.iterrows():
         weight_range_id = str(row.get("weight_range_id", "")).strip()
-        supplier_price = _float_value(row.get("supplier_price_per_ct_usd", "0"))
+        raw_supplier_price = row.get("supplier_price_per_ct_usd", "")
+
+        if not _has_positive_price(raw_supplier_price):
+            rows.append({
+                "weight_range_id": weight_range_id,
+                "color": row.get("color", ""),
+                "clarity": row.get("clarity", ""),
+                "supplier_price_per_ct_usd": "",
+                "internal_price_per_ct_usd": "",
+                "start_price_per_ct_usd": "",
+                "working_price_per_ct_usd": "",
+                "public_price_per_ct_usd": "",
+                "total_expense_rate": round(total_expense_rate, 6),
+                "calculation_status": "Нет цены поставщика",
+            })
+            continue
+
+        supplier_price = _float_value(raw_supplier_price)
 
         internal_price = supplier_price * (1 + total_expense_rate)
         start_margin = margin_map.get(("start", weight_range_id), 0.0)
@@ -557,6 +588,7 @@ def calculate_root_price_table() -> pd.DataFrame:
             "working_price_per_ct_usd": round(working_price, 2),
             "public_price_per_ct_usd": round(public_price, 2),
             "total_expense_rate": round(total_expense_rate, 6),
+            "calculation_status": "Рассчитано",
         })
 
     return pd.DataFrame(rows)
@@ -637,7 +669,24 @@ def calculate_index_table(score_key: str = "standard", currency: str = "RUB") ->
     public_index = str(currency).upper() == "RUB"
     rows = []
     for _, row in root_df.iterrows():
-        public_usd = _float_value(row.get("public_price_per_ct_usd", "0"))
+        public_value = row.get("public_price_per_ct_usd", "")
+        if not _has_positive_price(public_value):
+            rows.append({
+                "weight_range_id": row.get("weight_range_id", ""),
+                "color": row.get("color", ""),
+                "clarity": row.get("clarity", ""),
+                "score_key": score_key,
+                "score_name_ru": score_name,
+                "score_coefficient": coefficient,
+                "currency": str(currency).upper(),
+                "public_price_per_ct_usd": "",
+                "index_price_per_ct_usd": "",
+                "index_price_per_ct_display": "",
+                "calculation_status": "Нет цены поставщика",
+            })
+            continue
+
+        public_usd = _float_value(public_value)
         indexed_usd = public_usd * coefficient
         display_value = indexed_usd * multiplier
         rows.append({
@@ -651,6 +700,7 @@ def calculate_index_table(score_key: str = "standard", currency: str = "RUB") ->
             "public_price_per_ct_usd": round(public_usd, 2),
             "index_price_per_ct_usd": round(indexed_usd, 2),
             "index_price_per_ct_display": _round_price(display_value, currency, public_index=public_index),
+            "calculation_status": "Рассчитано",
         })
     return pd.DataFrame(rows)
 

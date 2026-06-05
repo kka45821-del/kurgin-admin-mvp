@@ -913,6 +913,7 @@ elif page == "Цены":
                 "expense_name_ru": st.column_config.TextColumn("Название"),
                 "rate": st.column_config.NumberColumn("Коэффициент", min_value=0.0, step=0.01, format="%.4f"),
                 "is_active": st.column_config.CheckboxColumn("Активно"),
+                "formula": st.column_config.TextColumn("Формула"),
                 "comment": st.column_config.TextColumn("Комментарий"),
                 "updated_at": st.column_config.TextColumn("Обновлено"),
             },
@@ -927,25 +928,62 @@ elif page == "Цены":
 
     with tab_margins:
         st.subheader("Маржи по диапазонам веса")
-        st.caption("Маржа за карат = числитель / делитель. Типы: start = стартовая, working = рабочая, public = публичная.")
+        st.caption("Маржа за карат = числитель / делитель.")
+
+        st.markdown("""
+**Маржа 1 — для стартовой цены**
+
+```text
+Стартовая цена = Внутренняя цена + Маржа 1
+```
+
+**Маржа 2 — для рабочей цены**
+
+```text
+Рабочая цена = Стартовая цена + Маржа 2
+```
+
+**Маржа 3 — для публичной цены**
+
+```text
+Публичная цена = Рабочая цена + Маржа 3
+```
+""")
+
+        margin_type_names = {
+            "start": "Маржа 1 — стартовая",
+            "working": "Маржа 2 — рабочая",
+            "public": "Маржа 3 — публичная",
+        }
+
         margins_df = read_price_margins()
+        margins_df["margin_name_ru"] = margins_df["margin_type"].astype(str).map(margin_type_names).fillna(margins_df["margin_type"])
+        margins_df["formula"] = margins_df.apply(
+            lambda r: f"{r.get('numerator', '')} / {r.get('divisor', '')} = "
+            f"{round(float(str(r.get('numerator', '0')).replace(',', '.') or 0) / (float(str(r.get('divisor', '1')).replace(',', '.') or 1) or 1), 2)} USD/ct",
+            axis=1,
+        )
+
         margins_edit = st.data_editor(
             margins_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["margin_type", "weight_range_id", "updated_at"],
+            disabled=["margin_type", "margin_name_ru", "weight_range_id", "formula", "updated_at"],
             column_config={
-                "margin_type": st.column_config.TextColumn("Тип маржи"),
+                "margin_type": st.column_config.TextColumn("Код"),
+                "margin_name_ru": st.column_config.TextColumn("Тип маржи"),
                 "weight_range_id": st.column_config.TextColumn("Диапазон веса"),
                 "numerator": st.column_config.NumberColumn("Числитель", min_value=0.0, step=1.0),
                 "divisor": st.column_config.NumberColumn("Делитель", min_value=0.01, step=0.1),
+                "formula": st.column_config.TextColumn("Формула"),
                 "comment": st.column_config.TextColumn("Комментарий"),
                 "updated_at": st.column_config.TextColumn("Обновлено"),
             },
             key="price_margins_editor",
         )
         if st.button("Сохранить маржи", type="primary"):
-            result = update_price_margins(margins_edit)
+            to_save = margins_edit.drop(columns=["margin_name_ru", "formula"], errors="ignore")
+            result = update_price_margins(to_save)
             st.success("Маржи сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
 
@@ -963,6 +1001,7 @@ elif page == "Цены":
                 "score_name_ru": st.column_config.TextColumn("Название"),
                 "coefficient": st.column_config.NumberColumn("Коэффициент", min_value=0.0, step=0.01, format="%.4f"),
                 "sort_order": st.column_config.NumberColumn("Порядок", min_value=1, step=1),
+                "formula": st.column_config.TextColumn("Формула"),
                 "comment": st.column_config.TextColumn("Комментарий"),
                 "updated_at": st.column_config.TextColumn("Обновлено"),
             },
@@ -986,6 +1025,7 @@ elif page == "Цены":
                 "rate_key": st.column_config.TextColumn("Ключ"),
                 "rate_name_ru": st.column_config.TextColumn("Название"),
                 "rate_value": st.column_config.NumberColumn("Курс", min_value=0.0, step=0.01, format="%.4f"),
+                "formula": st.column_config.TextColumn("Формула"),
                 "comment": st.column_config.TextColumn("Комментарий"),
                 "updated_at": st.column_config.TextColumn("Обновлено"),
             },
@@ -1000,7 +1040,7 @@ elif page == "Цены":
 
     with tab_root:
         st.subheader("Расчёт корневых цен за карат, USD")
-        st.caption("6B: проверочный расчёт цепочки supplier → internal → start → working → public. Без KURGIN Score, без Index и без финальных цен по камням.")
+        st.caption("6B: проверочный расчёт цепочки supplier → internal → start → working → public. Если цена поставщика пустая или 0, дальнейшие цены не рассчитываются.")
 
         root_df = calculate_root_price_table()
 
@@ -1048,6 +1088,7 @@ elif page == "Цены":
                         "working_price_per_ct_usd",
                         "public_price_per_ct_usd",
                         "total_expense_rate",
+                        "calculation_status",
                     ]
                 ],
                 use_container_width=True,
@@ -1091,15 +1132,25 @@ elif page == "Цены":
         selected_score_key = score_labels.get(selected_score_label, "standard")
         index_df = calculate_index_table(selected_score_key, selected_currency)
 
-        st.info("По умолчанию используется “Стандартный ×1.00”. Для RUB в публичном Index округление идёт вверх до 1000 ₽.")
+        st.info("По умолчанию используется “Стандартный ×1.00”. Для RUB в публичном Index округление идёт вверх до 1000 ₽. Если цена поставщика пустая или 0, ячейка Index не рассчитывается.")
 
-        with st.expander("Index по цветам", expanded=True):
+        st.markdown("""
+**Index по цветам** — удобный публичный вид таблицы.  
+Показывает только итоговую индексную цену по цвету, чистоте и диапазону веса.
+
+**Полная таблица Index** — техническая проверка расчёта.  
+Она нужна, чтобы видеть исходные поля: диапазон, цвет, чистоту, выбранный KURGIN Score, коэффициент, валюту, публичную цену в USD и итоговую цену после пересчёта.
+""")
+
+        with st.expander("Index по цветам — удобный вид", expanded=True):
+            st.caption("Это основной вид таблицы: цвет → чистота × диапазон веса → итоговая индексная цена.")
             for color in ["D", "E", "F", "G"]:
                 with st.expander(f"Цвет {color}", expanded=(color == "D")):
                     matrix = index_price_matrix_by_color(index_df, color)
                     st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
 
-        with st.expander("Полная таблица Index", expanded=False):
+        with st.expander("Полная таблица Index — техническая проверка", expanded=False):
+            st.caption("Здесь показаны все расчётные поля. Этот блок нужен для проверки формулы, курса, коэффициента KURGIN Score и округления.")
             st.dataframe(
                 index_df[
                     [
@@ -1112,6 +1163,7 @@ elif page == "Цены":
                         "public_price_per_ct_usd",
                         "index_price_per_ct_usd",
                         "index_price_per_ct_display",
+                        "calculation_status",
                     ]
                 ],
                 use_container_width=True,
