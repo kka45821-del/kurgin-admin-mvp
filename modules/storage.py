@@ -103,6 +103,33 @@ def generate_import_id() -> str:
     return f"{prefix}{next_num:03d}"
 
 
+def update_stone_admin_fields(
+    stone_id: str,
+    catalog_section: str,
+    status: str,
+    availability_status: str,
+    admin_note: str,
+    validation_message: str,
+) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files(f"before_update_stone_{stone_id}")
+
+    stones = read_stones()
+    mask = stones["stone_id"].astype(str) == str(stone_id)
+    if not mask.any():
+        return {"updated": False, "message": "Камень не найден.", "backup_dir": str(backup_dir)}
+
+    stones.loc[mask, "catalog_section"] = catalog_section
+    stones.loc[mask, "status"] = status
+    stones.loc[mask, "availability_status"] = availability_status
+    stones.loc[mask, "admin_note"] = admin_note
+    stones.loc[mask, "validation_message"] = validation_message
+
+    atomic_write_csv(stones, STONES_FILE)
+
+    return {"updated": True, "message": "Камень сохранён.", "backup_dir": str(backup_dir)}
+
+
 def get_shipment_delete_preview(import_id: str) -> dict:
     stones = read_stones()
     shipments = read_shipments()
