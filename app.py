@@ -199,7 +199,6 @@ def stone_card(stones: pd.DataFrame, selected_id: str):
 
 
 
-
 def to_num(series):
     return pd.to_numeric(series, errors="coerce").fillna(0)
 
@@ -789,8 +788,8 @@ elif page == "Разделы":
         to_save = edited.copy()
         to_save["is_public"] = to_save["is_public"].map(lambda x: "true" if bool(x) else "false")
         result = update_catalog_sections(to_save)
-        st.success(f"Разделы сохранены. Backup: {result['backup_dir']}")
-        st.rerun()
+        st.success("Разделы сохранены")
+        st.caption(f"Backup: {result['backup_dir']}")
 
     st.subheader("Правило веса")
     st.write("Основной каталог: от 1.00 ct включительно до 3.00 ct не включительно.")
