@@ -239,6 +239,73 @@ def shipment_summary_table(shipments, stones, payments):
     return pd.DataFrame(rows)
 
 
+def weight_bucket(value) -> str:
+    try:
+        w = float(value)
+    except Exception:
+        return "Нет веса"
+    if 1.00 <= w < 1.50:
+        return "1.00–1.49 ct"
+    if 1.50 <= w < 2.00:
+        return "1.50–1.99 ct"
+    if 2.00 <= w < 2.50:
+        return "2.00–2.49 ct"
+    if 2.50 <= w < 3.00:
+        return "2.50–2.99 ct"
+    if 3.00 <= w < 4.00:
+        return "3.00–3.99 ct"
+    if 4.00 <= w < 5.00:
+        return "4.00–4.99 ct"
+    if w >= 5.00:
+        return "5.00+ ct"
+    return "Вне диапазонов"
+
+
+def assortment_summary_table(stones: pd.DataFrame) -> pd.DataFrame:
+    if stones.empty:
+        return pd.DataFrame(columns=[
+            "Форма", "Диапазон веса", "Цвет", "Чистота",
+            "Всего", "В наличии", "Забронировано", "Продано", "Снято", "Архив",
+        ])
+
+    df = stones.copy()
+    df["Форма"] = df.get("shape", "").astype(str).str.upper()
+    df["Диапазон веса"] = df.get("weight", "").apply(weight_bucket)
+    df["Цвет"] = df.get("color", "").astype(str)
+    df["Чистота"] = df.get("clarity", "").astype(str)
+
+    grouped = (
+        df.groupby(["Форма", "Диапазон веса", "Цвет", "Чистота"], dropna=False)
+        .agg(
+            Всего=("stone_id", "count"),
+            **{
+                "В наличии": ("availability_status", lambda s: int((s.astype(str) == "in_stock").sum())),
+                "Забронировано": ("availability_status", lambda s: int((s.astype(str) == "reserved").sum())),
+                "Продано": ("availability_status", lambda s: int((s.astype(str) == "sold").sum())),
+                "Снято": ("availability_status", lambda s: int((s.astype(str) == "removed").sum())),
+                "Архив": ("status", lambda s: int((s.astype(str) == "archived").sum())),
+            }
+        )
+        .reset_index()
+    )
+
+    order = {
+        "1.00–1.49 ct": 1,
+        "1.50–1.99 ct": 2,
+        "2.00–2.49 ct": 3,
+        "2.50–2.99 ct": 4,
+        "3.00–3.99 ct": 5,
+        "4.00–4.99 ct": 6,
+        "5.00+ ct": 7,
+        "Вне диапазонов": 8,
+        "Нет веса": 9,
+    }
+    grouped["_sort"] = grouped["Диапазон веса"].map(order).fillna(99)
+    grouped = grouped.sort_values(["Форма", "_sort", "Цвет", "Чистота"]).drop(columns=["_sort"])
+    return grouped
+
+
+
 def shipment_card(shipment_id, shipments, stones, payments):
     row_df = shipments[shipments["shipment_id"].astype(str) == str(shipment_id)]
     if row_df.empty:
@@ -543,6 +610,13 @@ elif page == "Камни":
     else:
         filtered = filter_stones(stones)
         st.caption(f"Найдено камней: {len(filtered)}")
+
+        with st.expander("Сводка ассортимента", expanded=True):
+            summary = assortment_summary_table(filtered)
+            if summary.empty:
+                st.info("Нет данных для сводки.")
+            else:
+                st.dataframe(summary, use_container_width=True, hide_index=True, height=320)
 
         compact_table(filtered, [
             "stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity",
