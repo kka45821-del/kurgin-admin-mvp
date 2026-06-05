@@ -199,6 +199,7 @@ def stone_card(stones: pd.DataFrame, selected_id: str):
 
 
 
+
 def to_num(series):
     return pd.to_numeric(series, errors="coerce").fillna(0)
 
@@ -788,8 +789,8 @@ elif page == "Разделы":
         to_save = edited.copy()
         to_save["is_public"] = to_save["is_public"].map(lambda x: "true" if bool(x) else "false")
         result = update_catalog_sections(to_save)
-        st.success("Разделы сохранены")
-        st.caption(f"Backup: {result['backup_dir']}")
+        st.success(f"Разделы сохранены. Backup: {result['backup_dir']}")
+        st.rerun()
 
     st.subheader("Правило веса")
     st.write("Основной каталог: от 1.00 ct включительно до 3.00 ct не включительно.")
@@ -813,24 +814,84 @@ elif page == "Цены":
 
     with tab_supplier:
         st.subheader("Цена поставщика за карат")
-        st.caption("Вводится вручную по диапазону веса, цвету и чистоте. Цвета: D/E/F/G. Чистоты: IF/VVS1/VVS2/VS1/VS2.")
+        st.caption("Удобный ввод матрицей: отдельный блок по каждому цвету, строки = чистота, колонки = диапазоны веса.")
+
         supplier_df = read_price_supplier()
-        supplier_edit = st.data_editor(
-            supplier_df,
-            use_container_width=True,
-            hide_index=True,
-            disabled=["weight_range_id", "color", "clarity", "updated_at"],
-            column_config={
-                "weight_range_id": st.column_config.TextColumn("Диапазон веса"),
-                "color": st.column_config.TextColumn("Цвет"),
-                "clarity": st.column_config.TextColumn("Чистота"),
-                "supplier_price_per_ct_usd": st.column_config.NumberColumn("Цена поставщика USD/ct", min_value=0.0, step=1.0),
-                "comment": st.column_config.TextColumn("Комментарий"),
-                "updated_at": st.column_config.TextColumn("Обновлено"),
-            },
-            key="price_supplier_editor",
-        )
+
+        price_colors = ["D", "E", "F", "G"]
+        price_clarities = ["IF", "VVS1", "VVS2", "VS1", "VS2"]
+        price_weight_ranges = [
+            ("1.00-1.49", "1"),
+            ("1.50-1.99", "1.5"),
+            ("2.00-2.49", "2"),
+            ("2.50-2.99", "2.5"),
+            ("3.00-3.99", "3"),
+            ("4.00-4.99", "4"),
+            ("5.00+", "5+"),
+        ]
+
+        existing_comments = {}
+        for _, row in supplier_df.iterrows():
+            existing_comments[
+                (
+                    str(row.get("weight_range_id", "")),
+                    str(row.get("color", "")),
+                    str(row.get("clarity", "")),
+                )
+            ] = str(row.get("comment", ""))
+
+        edited_matrices = {}
+        for color in price_colors:
+            with st.expander(f"Цвет {color}", expanded=(color == "D")):
+                matrix_rows = []
+                for clarity in price_clarities:
+                    item = {"Чистота": clarity}
+                    for weight_id, label in price_weight_ranges:
+                        match = supplier_df[
+                            (supplier_df["weight_range_id"].astype(str) == weight_id)
+                            & (supplier_df["color"].astype(str) == color)
+                            & (supplier_df["clarity"].astype(str) == clarity)
+                        ]
+                        value = ""
+                        if not match.empty:
+                            value = match.iloc[0].get("supplier_price_per_ct_usd", "")
+                        item[label] = value
+                    matrix_rows.append(item)
+
+                matrix_df = pd.DataFrame(matrix_rows)
+
+                edited_matrix = st.data_editor(
+                    matrix_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    disabled=["Чистота"],
+                    column_config={
+                        "Чистота": st.column_config.TextColumn("Чистота"),
+                        **{
+                            label: st.column_config.NumberColumn(label, min_value=0.0, step=1.0)
+                            for _weight_id, label in price_weight_ranges
+                        },
+                    },
+                    key=f"supplier_price_matrix_{color}",
+                )
+                edited_matrices[color] = edited_matrix
+
         if st.button("Сохранить цены поставщика", type="primary"):
+            rows = []
+            for color, matrix in edited_matrices.items():
+                for _, matrix_row in matrix.iterrows():
+                    clarity = str(matrix_row.get("Чистота", ""))
+                    for weight_id, label in price_weight_ranges:
+                        rows.append({
+                            "weight_range_id": weight_id,
+                            "color": color,
+                            "clarity": clarity,
+                            "supplier_price_per_ct_usd": matrix_row.get(label, ""),
+                            "comment": existing_comments.get((weight_id, color, clarity), ""),
+                            "updated_at": "",
+                        })
+
+            supplier_edit = pd.DataFrame(rows)
             result = update_price_supplier(supplier_edit)
             st.success("Цены поставщика сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
