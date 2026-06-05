@@ -6,12 +6,14 @@ import pandas as pd
 
 from modules.paths import ensure_dirs
 from modules.storage import (
-    ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log,
-    get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields
+    ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
+    get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
+    update_shipment_fields, add_payment, delete_payment
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version
 from modules.import_commit import commit_import
 from modules.raw_lookup import get_stone_raw, transpose_one_row
+from modules.shipment_files import list_attachments, save_attachment, delete_attachment
 
 st.set_page_config(page_title="KURGIN Admin — Этап 2", layout="wide")
 st.markdown('''
@@ -196,6 +198,148 @@ def stone_card(stones: pd.DataFrame, selected_id: str):
             st.dataframe(raw["issues"], use_container_width=True, hide_index=True, height=240)
 
 
+
+
+def to_num(series):
+    return pd.to_numeric(series, errors="coerce").fillna(0)
+
+
+def shipment_summary_table(shipments, stones, payments):
+    if shipments.empty:
+        return pd.DataFrame()
+    rows = []
+    for _, sh in shipments.iterrows():
+        sid = str(sh.get("shipment_id", ""))
+        ss = stones[stones["shipment_id"].astype(str) == sid] if not stones.empty else pd.DataFrame()
+        pp = payments[payments["shipment_id"].astype(str) == sid] if not payments.empty else pd.DataFrame()
+        total_cost = float(pd.to_numeric(pd.Series([sh.get("total_purchase_cost", 0)]), errors="coerce").fillna(0).iloc[0])
+        paid = float(to_num(pp["amount"]).sum()) if not pp.empty and "amount" in pp.columns else 0
+        rows.append({
+            "shipment_id": sid,
+            "supplier_id": sh.get("supplier_id", ""),
+            "supplier_name": sh.get("supplier_name", ""),
+            "shipment_date": sh.get("shipment_date", ""),
+            "shipment_name": sh.get("shipment_name", ""),
+            "currency": sh.get("currency", ""),
+            "stones_total": len(ss),
+            "in_stock": int((ss["availability_status"].astype(str) == "in_stock").sum()) if not ss.empty else 0,
+            "reserved": int((ss["availability_status"].astype(str) == "reserved").sum()) if not ss.empty else 0,
+            "sold": int((ss["availability_status"].astype(str) == "sold").sum()) if not ss.empty else 0,
+            "removed": int((ss["availability_status"].astype(str) == "removed").sum()) if not ss.empty else 0,
+            "main": int((ss["catalog_section"].astype(str) == "main").sum()) if not ss.empty else 0,
+            "large": int((ss["catalog_section"].astype(str) == "large").sum()) if not ss.empty else 0,
+            "round": int((ss["shape"].astype(str).str.upper() == "ROUND").sum()) if not ss.empty else 0,
+            "not_round": int((ss["shape"].astype(str).str.upper() != "ROUND").sum()) if not ss.empty else 0,
+            "warnings": int((ss["warning_message"].astype(str).str.len() > 0).sum()) if not ss.empty else 0,
+            "total_purchase_cost": total_cost,
+            "paid_total": paid,
+            "balance_due": total_cost - paid,
+            "comment": sh.get("comment", ""),
+        })
+    return pd.DataFrame(rows)
+
+
+def shipment_card(shipment_id, shipments, stones, payments):
+    row_df = shipments[shipments["shipment_id"].astype(str) == str(shipment_id)]
+    if row_df.empty:
+        st.warning("Поставка не найдена.")
+        return
+    row = row_df.iloc[0].to_dict()
+    ss = stones[stones["shipment_id"].astype(str) == str(shipment_id)] if not stones.empty else pd.DataFrame()
+    pp = payments[payments["shipment_id"].astype(str) == str(shipment_id)] if not payments.empty else pd.DataFrame()
+    st.subheader(f"Карточка поставки: {shipment_id}")
+    total_cost = float(pd.to_numeric(pd.Series([row.get("total_purchase_cost", 0)]), errors="coerce").fillna(0).iloc[0])
+    paid_total = float(to_num(pp["amount"]).sum()) if not pp.empty else 0
+    balance = total_cost - paid_total
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Камней", len(ss))
+    m2.metric("В наличии", int((ss["availability_status"].astype(str) == "in_stock").sum()) if not ss.empty else 0)
+    m3.metric("Продано", int((ss["availability_status"].astype(str) == "sold").sum()) if not ss.empty else 0)
+    m4.metric("Остаток к оплате", f"{balance:.2f}")
+    with st.expander("Редактировать данные поставки", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            supplier_id = st.text_input("supplier_id", value=row.get("supplier_id", ""), key=f"supid_{shipment_id}")
+            supplier_name = st.text_input("Поставщик", value=row.get("supplier_name", ""), key=f"sup_{shipment_id}")
+        with c2:
+            shipment_date = st.text_input("Дата поставки", value=row.get("shipment_date", ""), key=f"date_{shipment_id}")
+            shipment_name = st.text_input("Название / номер", value=row.get("shipment_name", ""), key=f"name_{shipment_id}")
+        with c3:
+            currency = st.text_input("Валюта", value=row.get("currency", ""), key=f"cur_{shipment_id}")
+            total_purchase_cost = st.number_input("Стоимость партии", value=total_cost, step=100.0, format="%.2f", key=f"cost_{shipment_id}")
+        payment_comment = st.text_area("Комментарий по оплате", value=row.get("payment_comment", ""), height=70, key=f"paycom_{shipment_id}")
+        comment = st.text_area("Общий комментарий", value=row.get("comment", ""), height=70, key=f"com_{shipment_id}")
+        if st.button("Сохранить данные поставки", type="primary", key=f"save_ship_{shipment_id}"):
+            result = update_shipment_fields(shipment_id, {
+                "supplier_id": supplier_id, "supplier_name": supplier_name, "shipment_date": shipment_date,
+                "shipment_name": shipment_name, "currency": currency, "total_purchase_cost": total_purchase_cost,
+                "payment_comment": payment_comment, "comment": comment,
+            })
+            if result["updated"]:
+                st.success(f"Поставка сохранена. Backup: {result['backup_dir']}")
+                st.rerun()
+            else:
+                st.error(result["message"])
+    with st.expander("Сводка по камням поставки", expanded=True):
+        s1, s2, s3, s4, s5, s6 = st.columns(6)
+        s1.metric("Основной", int((ss["catalog_section"].astype(str) == "main").sum()) if not ss.empty else 0)
+        s2.metric("Крупные", int((ss["catalog_section"].astype(str) == "large").sum()) if not ss.empty else 0)
+        s3.metric("ROUND", int((ss["shape"].astype(str).str.upper() == "ROUND").sum()) if not ss.empty else 0)
+        s4.metric("Не ROUND", int((ss["shape"].astype(str).str.upper() != "ROUND").sum()) if not ss.empty else 0)
+        s5.metric("Бронь", int((ss["availability_status"].astype(str) == "reserved").sum()) if not ss.empty else 0)
+        s6.metric("Предупр.", int((ss["warning_message"].astype(str).str.len() > 0).sum()) if not ss.empty else 0)
+    with st.expander("Платежи по поставке", expanded=True):
+        p1, p2, p3 = st.columns(3)
+        with p1:
+            payment_date = st.date_input("Дата платежа", value=date.today(), key=f"pdate_{shipment_id}")
+        with p2:
+            amount = st.number_input("Сумма", min_value=0.0, step=100.0, format="%.2f", key=f"pamount_{shipment_id}")
+        with p3:
+            pay_currency = st.text_input("Валюта платежа", value=row.get("currency", ""), key=f"pcur_{shipment_id}")
+        pay_comment = st.text_input("Комментарий к платежу", key=f"pcomm_{shipment_id}")
+        if st.button("Добавить платёж", key=f"addpay_{shipment_id}"):
+            if amount <= 0:
+                st.error("Сумма платежа должна быть больше 0.")
+            else:
+                result = add_payment(shipment_id, str(payment_date), amount, pay_currency, pay_comment)
+                st.success(f"Платёж добавлен. Backup: {result['backup_dir']}")
+                st.rerun()
+        if pp.empty:
+            st.info("Платежей пока нет.")
+        else:
+            compact_table(pp, ["payment_id", "payment_date", "amount", "currency", "comment", "created_at"], height=220)
+            del_id = st.selectbox("Удалить платёж", [""] + pp["payment_id"].astype(str).tolist(), key=f"delpay_{shipment_id}")
+            if del_id:
+                confirm = st.text_input(f"Для удаления платежа введите его ID: {del_id}", key=f"confpay_{shipment_id}")
+                if st.button("Удалить платёж", disabled=(confirm != del_id), key=f"delpaybtn_{shipment_id}"):
+                    result = delete_payment(del_id)
+                    st.success(f"Платёж удалён. Backup: {result['backup_dir']}")
+                    st.rerun()
+    with st.expander("Вложения поставки", expanded=True):
+        attachments = list_attachments(shipment_id)
+        st.caption(f"Файлов: {len(attachments)} / 5")
+        uploaded_file = st.file_uploader("Прикрепить файл к поставке", key=f"attach_{shipment_id}")
+        if uploaded_file is not None and st.button("Сохранить вложение", key=f"save_attach_{shipment_id}"):
+            result = save_attachment(shipment_id, uploaded_file)
+            if result["ok"]:
+                st.success(f"{result['message']} Backup: {result['backup_dir']}")
+                st.rerun()
+            else:
+                st.error(result["message"])
+        for file in list_attachments(shipment_id):
+            cols = st.columns([3, 1, 1])
+            cols[0].write(file.name)
+            cols[1].download_button("Скачать", data=file.read_bytes(), file_name=file.name, key=f"down_{shipment_id}_{file.name}")
+            if cols[2].button("Удалить", key=f"del_attach_{shipment_id}_{file.name}"):
+                result = delete_attachment(shipment_id, file.name)
+                if result["ok"]:
+                    st.success(f"{result['message']} Backup: {result['backup_dir']}")
+                    st.rerun()
+                else:
+                    st.error(result["message"])
+    with st.expander("Камни этой поставки", expanded=False):
+        compact_table(ss, ["stone_id", "report_number", "shape", "weight", "color", "clarity", "kurgin_score", "catalog_section", "status", "availability_status", "warning_message"], height=360)
+
 page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Журнал импорта", "Правила"])
 
 if page == "Загрузка поставки":
@@ -343,40 +487,52 @@ if page == "Загрузка поставки":
 elif page == "Поставки":
     st.title("Поставки")
     shipments = read_shipments()
-
+    stones = read_stones()
+    payments = read_payments()
     if shipments.empty:
         st.info("Поставок пока нет.")
     else:
-        compact_table(shipments, [
-            "shipment_id", "supplier_name", "shipment_date", "shipment_name", "currency",
-            "total_purchase_cost", "advance_paid", "created_at", "original_filename"
-        ], height=360)
-
+        summary = shipment_summary_table(shipments, stones, payments)
+        st.subheader("Общая сводка")
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            supplier_filter = st.selectbox("Поставщик", ["Все"] + sorted(summary["supplier_name"].dropna().astype(str).unique().tolist()))
+        with f2:
+            currency_filter = st.selectbox("Валюта", ["Все"] + sorted(summary["currency"].dropna().astype(str).unique().tolist()))
+        with f3:
+            search_ship = st.text_input("Поиск по номеру / названию поставки")
+        filtered_summary = summary.copy()
+        if supplier_filter != "Все":
+            filtered_summary = filtered_summary[filtered_summary["supplier_name"].astype(str) == supplier_filter]
+        if currency_filter != "Все":
+            filtered_summary = filtered_summary[filtered_summary["currency"].astype(str) == currency_filter]
+        if search_ship:
+            mask = filtered_summary["shipment_id"].astype(str).str.contains(search_ship, case=False, na=False) | filtered_summary["shipment_name"].astype(str).str.contains(search_ship, case=False, na=False)
+            filtered_summary = filtered_summary[mask]
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Поставок", len(filtered_summary))
+        m2.metric("Камней", int(to_num(filtered_summary["stones_total"]).sum()) if not filtered_summary.empty else 0)
+        m3.metric("В наличии", int(to_num(filtered_summary["in_stock"]).sum()) if not filtered_summary.empty else 0)
+        m4.metric("Продано", int(to_num(filtered_summary["sold"]).sum()) if not filtered_summary.empty else 0)
+        m5.metric("Остаток", f"{float(to_num(filtered_summary['balance_due']).sum()) if not filtered_summary.empty else 0:.2f}")
+        compact_table(filtered_summary, ["shipment_id", "supplier_id", "supplier_name", "shipment_date", "shipment_name", "currency", "stones_total", "in_stock", "reserved", "sold", "removed", "total_purchase_cost", "paid_total", "balance_due", "comment"], height=320)
+        st.divider()
+        selected = st.selectbox("Открыть карточку поставки", filtered_summary["shipment_id"].astype(str).tolist() if not filtered_summary.empty else summary["shipment_id"].astype(str).tolist())
+        shipment_card(selected, shipments, stones, payments)
         st.divider()
         st.subheader("Опасная команда: удалить поставку полностью")
-        st.warning("Удаление уберёт поставку, камни этой поставки, запись импорта и raw-файлы. Перед удалением будет создан backup.")
-
-        shipment_ids = sorted(shipments["shipment_id"].astype(str).tolist())
-        selected = st.selectbox("Поставка для удаления", shipment_ids)
+        st.warning("Удаление уберёт поставку, камни этой поставки, платежи, запись импорта и raw-файлы. Перед удалением будет создан backup.")
         preview = get_shipment_delete_preview(selected)
-
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Камней будет удалено", preview["stones_count"])
         c2.metric("Строк поставки", preview["shipment_rows"])
-        c3.metric("Строк import_log", preview["log_rows"])
+        c3.metric("Платежей", preview.get("payments_count", 0))
         c4.metric("Raw-папка", "есть" if preview["raw_dir_exists"] else "нет")
-
-        st.caption(f"Raw-папка: {preview['raw_dir']}")
-        confirm_text = st.text_input(f"Для подтверждения введите номер поставки: {selected}")
-
+        confirm_text = st.text_input(f"Для подтверждения удаления введите номер поставки: {selected}")
         if st.button("Удалить поставку полностью", type="primary", disabled=(confirm_text != selected)):
             result = delete_shipment_completely(selected)
             st.success("Поставка удалена полностью.")
-            st.write(f"Удалено камней: {result['stones_deleted']}")
-            st.write(f"Удалено строк поставки: {result['shipment_rows_deleted']}")
-            st.write(f"Удалено строк import_log: {result['log_rows_deleted']}")
-            st.write(f"Raw-папка удалена: {'да' if result['raw_deleted'] else 'нет'}")
-            st.write(f"Backup: {result['backup_dir']}")
+            st.write(result)
             st.rerun()
 
 elif page == "Камни":

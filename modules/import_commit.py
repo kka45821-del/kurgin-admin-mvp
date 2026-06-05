@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 import pandas as pd
 
-from .paths import RAW_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE
-from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS
+from .paths import RAW_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, PAYMENTS_FILE
+from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS
 from .storage import backup_existing_files, append_csv
 
 
@@ -27,6 +27,7 @@ def commit_import(import_id, uploaded_bytes, workbook, saved_stones, not_saved_c
     shipment_row = pd.DataFrame([{
         "shipment_id": import_id,
         "import_id": import_id,
+        "supplier_id": shipment.get("supplier_id", ""),
         "supplier_name": shipment.get("supplier_name", ""),
         "shipment_date": shipment.get("shipment_date", ""),
         "shipment_name": shipment.get("shipment_name", ""),
@@ -60,5 +61,21 @@ def commit_import(import_id, uploaded_bytes, workbook, saved_stones, not_saved_c
     append_csv(STONES_FILE, STONES_COLUMNS, saved_stones)
     append_csv(SHIPMENTS_FILE, SHIPMENTS_COLUMNS, shipment_row)
     append_csv(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS, log_row)
+
+    try:
+        advance = float(shipment.get("advance_paid") or 0)
+    except Exception:
+        advance = 0
+    if advance > 0:
+        payment_row = pd.DataFrame([{
+            "payment_id": f"PAY-{import_id}-ADVANCE",
+            "shipment_id": import_id,
+            "payment_date": shipment.get("shipment_date", ""),
+            "amount": advance,
+            "currency": shipment.get("currency", ""),
+            "comment": "Аванс при загрузке поставки",
+            "created_at": imported_at,
+        }])
+        append_csv(PAYMENTS_FILE, PAYMENTS_COLUMNS, payment_row)
 
     return {"backup_dir": str(backup_dir), "raw_dir": str(raw_dir), "original_path": str(original_path)}

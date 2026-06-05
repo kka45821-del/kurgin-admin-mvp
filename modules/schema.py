@@ -39,6 +39,7 @@ STONES_COLUMNS = [
 SHIPMENTS_COLUMNS = [
     "shipment_id",
     "import_id",
+    "supplier_id",
     "supplier_name",
     "shipment_date",
     "shipment_name",
@@ -70,3 +71,14 @@ IMPORT_LOG_COLUMNS = [
 ]
 
 REQUIRED_SHEETS = ["Results", "Details", "Issues", "System"]
+
+
+PAYMENTS_COLUMNS = [
+    "payment_id",
+    "shipment_id",
+    "payment_date",
+    "amount",
+    "currency",
+    "comment",
+    "created_at",
+]
