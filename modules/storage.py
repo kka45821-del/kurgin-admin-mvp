@@ -595,3 +595,86 @@ def root_price_matrix_by_color(root_df: pd.DataFrame, price_column: str, color: 
         rows.append(item)
 
     return pd.DataFrame(rows)
+
+
+def _round_price(value: float, currency: str, public_index: bool = False) -> int:
+    try:
+        amount = float(value)
+    except Exception:
+        amount = 0.0
+    currency = str(currency).upper()
+    if currency == "RUB" and public_index:
+        if amount <= 0:
+            return 0
+        import math
+        return int(math.ceil(amount / 1000.0) * 1000)
+    return int(round(amount))
+
+
+def _currency_multiplier(currency: str) -> float:
+    currency = str(currency).upper()
+    if currency == "USD":
+        return 1.0
+    rates = read_currency_rates()
+    values = {str(row.get("rate_key", "")): _float_value(row.get("rate_value", "0")) for _, row in rates.iterrows()}
+    if currency == "RUB":
+        return values.get("USD_RUB", 0.0) or 0.0
+    if currency == "INR":
+        return values.get("USD_INR", 0.0) or 0.0
+    return 1.0
+
+
+def calculate_index_table(score_key: str = "standard", currency: str = "RUB") -> pd.DataFrame:
+    root_df = calculate_root_price_table()
+    score_df = read_price_score_coefficients()
+    score_match = score_df[score_df["score_key"].astype(str) == str(score_key)]
+    coefficient = 1.0
+    score_name = "Стандартный"
+    if not score_match.empty:
+        coefficient = _float_value(score_match.iloc[0].get("coefficient", "1"), 1.0)
+        score_name = str(score_match.iloc[0].get("score_name_ru", "Стандартный"))
+    multiplier = _currency_multiplier(currency)
+    public_index = str(currency).upper() == "RUB"
+    rows = []
+    for _, row in root_df.iterrows():
+        public_usd = _float_value(row.get("public_price_per_ct_usd", "0"))
+        indexed_usd = public_usd * coefficient
+        display_value = indexed_usd * multiplier
+        rows.append({
+            "weight_range_id": row.get("weight_range_id", ""),
+            "color": row.get("color", ""),
+            "clarity": row.get("clarity", ""),
+            "score_key": score_key,
+            "score_name_ru": score_name,
+            "score_coefficient": coefficient,
+            "currency": str(currency).upper(),
+            "public_price_per_ct_usd": round(public_usd, 2),
+            "index_price_per_ct_usd": round(indexed_usd, 2),
+            "index_price_per_ct_display": _round_price(display_value, currency, public_index=public_index),
+        })
+    return pd.DataFrame(rows)
+
+
+def index_price_matrix_by_color(index_df: pd.DataFrame, color: str) -> pd.DataFrame:
+    if index_df.empty:
+        return pd.DataFrame()
+    labels = {
+        "1.00-1.49": "1",
+        "1.50-1.99": "1.5",
+        "2.00-2.49": "2",
+        "2.50-2.99": "2.5",
+        "3.00-3.99": "3",
+        "4.00-4.99": "4",
+        "5.00+": "5+",
+    }
+    clarities = ["IF", "VVS1", "VVS2", "VS1", "VS2"]
+    weight_ids = ["1.00-1.49", "1.50-1.99", "2.00-2.49", "2.50-2.99", "3.00-3.99", "4.00-4.99", "5.00+"]
+    subset = index_df[index_df["color"].astype(str) == str(color)].copy()
+    rows = []
+    for clarity in clarities:
+        item = {"Чистота": clarity}
+        for weight_id in weight_ids:
+            match = subset[(subset["clarity"].astype(str) == clarity) & (subset["weight_range_id"].astype(str) == weight_id)]
+            item[labels[weight_id]] = "" if match.empty else match.iloc[0].get("index_price_per_ct_display", "")
+        rows.append(item)
+    return pd.DataFrame(rows)

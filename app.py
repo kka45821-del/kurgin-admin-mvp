@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -800,17 +800,18 @@ elif page == "Разделы":
 
 elif page == "Цены":
     st.title("Цены")
-    st.caption("Этап 6A/6B: настройки цен и расчёт корневых цен за карат. Пока без итоговых цен по камням, Index и публикации.")
+    st.caption("Этап 6A/6B/6C: настройки цен, расчёт корневых цен и индексная таблица. Пока без итоговых цен по камням, просмотра маржи и публикации.")
 
-    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Расчёт корневых цен за карат доступен во вкладке “Расчёт USD”. Index и просмотр маржи будут в следующих подэтапах.")
+    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Расчёт корневых цен доступен во вкладке “Расчёт USD”. Индексная таблица доступна во вкладке “Index”. Просмотр маржи будет в следующем подэтапе.")
 
-    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates, tab_root = st.tabs([
+    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates, tab_root, tab_index = st.tabs([
         "Цена поставщика",
         "Расходы",
         "Маржи",
         "KURGIN Score",
         "Курсы валют",
         "Расчёт USD",
+        "Index",
     ])
 
     with tab_supplier:
@@ -1047,6 +1048,70 @@ elif page == "Цены":
                         "working_price_per_ct_usd",
                         "public_price_per_ct_usd",
                         "total_expense_rate",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+            )
+
+
+
+    with tab_index:
+        st.subheader("Index — публичная индексная таблица")
+        st.caption("6C: публичная цена за карат из 6B × выбранный коэффициент KURGIN Score. Это справочная таблица, не список конкретных камней.")
+
+        score_df = read_price_score_coefficients().copy()
+        score_df["sort_order_num"] = pd.to_numeric(score_df["sort_order"], errors="coerce").fillna(99)
+        score_df = score_df.sort_values("sort_order_num")
+
+        score_options = []
+        score_labels = {}
+        for _, row in score_df.iterrows():
+            key = str(row.get("score_key", ""))
+            name = str(row.get("score_name_ru", key))
+            coeff = row.get("coefficient", "1.00")
+            label = f"{name} ×{coeff}"
+            score_options.append(label)
+            score_labels[label] = key
+
+        default_label = next((label for label, key in score_labels.items() if key == "standard"), score_options[0] if score_options else "")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            selected_score_label = st.radio(
+                "KURGIN Score для Index",
+                score_options,
+                index=score_options.index(default_label) if default_label in score_options else 0,
+                horizontal=True,
+            )
+        with c2:
+            selected_currency = st.selectbox("Валюта", ["RUB", "USD", "INR"], index=0)
+
+        selected_score_key = score_labels.get(selected_score_label, "standard")
+        index_df = calculate_index_table(selected_score_key, selected_currency)
+
+        st.info("По умолчанию используется “Стандартный ×1.00”. Для RUB в публичном Index округление идёт вверх до 1000 ₽.")
+
+        with st.expander("Index по цветам", expanded=True):
+            for color in ["D", "E", "F", "G"]:
+                with st.expander(f"Цвет {color}", expanded=(color == "D")):
+                    matrix = index_price_matrix_by_color(index_df, color)
+                    st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
+
+        with st.expander("Полная таблица Index", expanded=False):
+            st.dataframe(
+                index_df[
+                    [
+                        "weight_range_id",
+                        "color",
+                        "clarity",
+                        "score_name_ru",
+                        "score_coefficient",
+                        "currency",
+                        "public_price_per_ct_usd",
+                        "index_price_per_ct_usd",
+                        "index_price_per_ct_display",
                     ]
                 ],
                 use_container_width=True,
