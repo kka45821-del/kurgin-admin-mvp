@@ -1,81 +1,54 @@
 from __future__ import annotations
 
 from datetime import date
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
 from modules.paths import ensure_dirs
-from modules.storage import ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, get_shipment_delete_preview, delete_shipment_completely
+from modules.storage import (
+    ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log,
+    get_shipment_delete_preview, delete_shipment_completely
+)
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version
 from modules.import_commit import commit_import
 
-
 st.set_page_config(page_title="KURGIN Admin — Этап 1", layout="wide")
-
-st.markdown(
-    '''
-    <style>
-    .block-container {padding-top: 1rem; padding-bottom: 1rem; max-width: 1400px;}
-    div[data-testid="stVerticalBlock"] {gap: 0.45rem;}
-    div[data-testid="stHorizontalBlock"] {gap: 0.6rem;}
-    .stDataFrame {font-size: 12px;}
-    h1, h2, h3 {margin-bottom: 0.3rem;}
-    .small-note {font-size: 0.85rem; color: #666;}
-    </style>
-    ''',
-    unsafe_allow_html=True,
-)
+st.markdown('''
+<style>
+.block-container {padding-top: 1rem; padding-bottom: 1rem; max-width: 1400px;}
+div[data-testid="stVerticalBlock"] {gap: 0.45rem;}
+.stDataFrame {font-size: 12px;}
+h1, h2, h3 {margin-bottom: 0.3rem;}
+</style>
+''', unsafe_allow_html=True)
 
 ensure_dirs()
 ensure_data_files()
 
-STATUS_LABELS = {
-    "draft": "Черновик",
-    "ready": "Готов",
-    "published": "Опубликован",
-    "archived": "Архив",
-}
-AVAIL_LABELS = {
-    "in_stock": "В наличии",
-    "reserved": "Забронирован",
-    "sold": "Продан",
-    "removed": "Снят с продажи",
-}
-SECTION_LABELS = {
-    "main": "Основной каталог",
-    "large": "Крупные камни",
-    "": "Вне текущей версии",
-}
-SCORE_LABELS = {
-    "calculated": "Рассчитан",
-    "not_available_for_shape": "Недоступен для формы",
-}
+STATUS_LABELS = {"draft": "Черновик", "ready": "Готов", "published": "Опубликован", "archived": "Архив"}
+AVAIL_LABELS = {"in_stock": "В наличии", "reserved": "Забронирован", "sold": "Продан", "removed": "Снят с продажи"}
+SECTION_LABELS = {"main": "Основной каталог", "large": "Крупные камни", "": "Вне текущей версии"}
+SCORE_LABELS = {"calculated": "Рассчитан", "not_available_for_shape": "Недоступен для формы"}
 
-
-def labelize(df: pd.DataFrame) -> pd.DataFrame:
+def labelize(df):
     if df.empty:
         return df
     view = df.copy()
-    if "status" in view.columns:
-        view["status"] = view["status"].map(STATUS_LABELS).fillna(view["status"])
-    if "availability_status" in view.columns:
-        view["availability_status"] = view["availability_status"].map(AVAIL_LABELS).fillna(view["availability_status"])
-    if "catalog_section" in view.columns:
-        view["catalog_section"] = view["catalog_section"].map(SECTION_LABELS).fillna(view["catalog_section"])
-    if "score_status" in view.columns:
-        view["score_status"] = view["score_status"].map(SCORE_LABELS).fillna(view["score_status"])
+    for col, mapping in [
+        ("status", STATUS_LABELS),
+        ("availability_status", AVAIL_LABELS),
+        ("catalog_section", SECTION_LABELS),
+        ("score_status", SCORE_LABELS),
+    ]:
+        if col in view.columns:
+            view[col] = view[col].map(mapping).fillna(view[col])
     return view
 
-
-def compact_table(df: pd.DataFrame, columns: list[str], height: int = 360):
+def compact_table(df, columns, height=360):
     cols = [c for c in columns if c in df.columns]
     st.dataframe(labelize(df[cols]), use_container_width=True, height=height, hide_index=True)
 
-
-page = st.sidebar.radio(
-    "Раздел",
-    ["Загрузка поставки", "Поставки", "Камни", "Журнал импорта", "Правила"],
-)
+page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Журнал импорта", "Правила"])
 
 if page == "Загрузка поставки":
     st.title("Загрузка поставки")
@@ -112,11 +85,13 @@ if page == "Загрузка поставки":
             missing.append("Excel-файл")
         if total_purchase_cost <= 0:
             missing.append("Стоимость закупки всей партии")
+
         if missing:
             st.error("Заполните обязательные поля: " + ", ".join(missing))
         else:
             uploaded_bytes = uploaded.getvalue()
             workbook, errors = read_workbook(uploaded_bytes)
+
             if errors:
                 st.error("Импорт заблокирован.")
                 for err in errors:
@@ -134,15 +109,10 @@ if page == "Загрузка поставки":
                     "comment": comment,
                 }
                 saved_df, not_saved_df, stats = normalize_stones(
-                    workbook["Results"],
-                    workbook["Details"],
-                    workbook["Issues"],
-                    shipment,
-                    import_id,
-                    uploaded.name,
+                    workbook["Results"], workbook["Details"], workbook["Issues"],
+                    shipment, import_id, uploaded.name
                 )
                 template_version = get_template_version(workbook["System"])
-
                 st.session_state["preview"] = {
                     "import_id": import_id,
                     "shipment": shipment,
@@ -183,47 +153,37 @@ if page == "Загрузка поставки":
             st.caption(f"Версия / служебная информация: {preview.get('template_version')}")
 
         if stats.get("conflicts", 0):
-            st.error("Найдены конфликты ID. Этап 1 не перезаписывает существующие камни. Обработка конфликтов будет отдельным этапом.")
+            st.error("Найдены конфликты ID. Этап 1 не перезаписывает существующие камни.")
         else:
             st.success("Конфликтов ID не найдено.")
 
         with st.expander("Камни, которые будут сохранены", expanded=True):
-            compact_table(
-                preview["saved_df"],
-                ["stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity", "kurgin_score", "score_status", "catalog_section", "status", "availability_status", "warning_message"],
-                height=360,
-            )
+            compact_table(preview["saved_df"], [
+                "stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity",
+                "fluorescence", "min_diameter", "max_diameter", "depth_mm",
+                "kurgin_score", "score_status", "catalog_section", "status", "availability_status", "warning_message"
+            ])
 
         with st.expander("Камни вне текущей версии / не сохраняются", expanded=False):
             ns = preview["not_saved_df"]
             if ns.empty:
                 st.info("Нет строк, которые не сохраняются.")
             else:
-                cols = ["stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity", "not_saved_reason", "validation_message"]
-                compact_table(ns, cols, height=300)
+                compact_table(ns, ["stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity", "not_saved_reason", "validation_message"])
 
         with st.expander("Служебные данные файла", expanded=False):
             st.dataframe(preview["workbook"]["System"], use_container_width=True, height=260, hide_index=True)
 
         b1, b2, b3 = st.columns(3)
         with b1:
-            disabled = stats.get("conflicts", 0) > 0
-            if st.button("Подтвердить импорт", type="primary", use_container_width=True, disabled=disabled):
-                result = commit_import(
-                    import_id=preview["import_id"],
-                    uploaded_bytes=preview["uploaded_bytes"],
-                    workbook=preview["workbook"],
-                    saved_stones=preview["saved_df"],
-                    not_saved_count=stats.get("not_saved", 0),
-                    stats=stats,
-                    shipment=preview["shipment"],
-                    original_filename=preview["original_filename"],
-                    excel_template_version=preview.get("template_version", ""),
+            if st.button("Подтвердить импорт", type="primary", use_container_width=True, disabled=stats.get("conflicts", 0) > 0):
+                commit_import(
+                    preview["import_id"], preview["uploaded_bytes"], preview["workbook"], preview["saved_df"],
+                    stats.get("not_saved", 0), stats, preview["shipment"],
+                    preview["original_filename"], preview.get("template_version", "")
                 )
-                st.session_state["last_import_id"] = preview["import_id"]
-                del st.session_state["preview"]
                 st.success("Поставка успешно импортирована.")
-                st.info(f"Номер поставки: {st.session_state['last_import_id']}")
+                del st.session_state["preview"]
                 st.rerun()
         with b2:
             if st.button("Отменить импорт", use_container_width=True):
@@ -236,30 +196,34 @@ if page == "Загрузка поставки":
 elif page == "Поставки":
     st.title("Поставки")
     shipments = read_shipments()
+
     if shipments.empty:
         st.info("Поставок пока нет.")
     else:
-        show_cols = ["shipment_id", "supplier_name", "shipment_date", "shipment_name", "currency", "total_purchase_cost", "advance_paid", "created_at", "original_filename"]
-        compact_table(shipments, show_cols, height=360)
+        compact_table(shipments, [
+            "shipment_id", "supplier_name", "shipment_date", "shipment_name", "currency",
+            "total_purchase_cost", "advance_paid", "created_at", "original_filename"
+        ], height=360)
 
         st.divider()
         st.subheader("Опасная команда: удалить поставку полностью")
         st.warning("Удаление уберёт поставку, камни этой поставки, запись импорта и raw-файлы. Перед удалением будет создан backup.")
 
         shipment_ids = sorted(shipments["shipment_id"].astype(str).tolist())
-        selected_delete_id = st.selectbox("Поставка для удаления", shipment_ids)
-        delete_preview = get_shipment_delete_preview(selected_delete_id)
+        selected = st.selectbox("Поставка для удаления", shipment_ids)
+        preview = get_shipment_delete_preview(selected)
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Камней будет удалено", delete_preview["stones_count"])
-        c2.metric("Строк поставки", delete_preview["shipment_rows"])
-        c3.metric("Строк import_log", delete_preview["log_rows"])
-        c4.metric("Raw-папка", "есть" if delete_preview["raw_dir_exists"] else "нет")
-        st.caption(f"Raw-папка: {delete_preview['raw_dir']}")
+        c1.metric("Камней будет удалено", preview["stones_count"])
+        c2.metric("Строк поставки", preview["shipment_rows"])
+        c3.metric("Строк import_log", preview["log_rows"])
+        c4.metric("Raw-папка", "есть" if preview["raw_dir_exists"] else "нет")
 
-        confirm_delete = st.text_input(f"Для подтверждения введите номер поставки: {selected_delete_id}")
-        if st.button("Удалить поставку полностью", type="primary", disabled=(confirm_delete != selected_delete_id)):
-            result = delete_shipment_completely(selected_delete_id)
+        st.caption(f"Raw-папка: {preview['raw_dir']}")
+        confirm_text = st.text_input(f"Для подтверждения введите номер поставки: {selected}")
+
+        if st.button("Удалить поставку полностью", type="primary", disabled=(confirm_text != selected)):
+            result = delete_shipment_completely(selected)
             st.success("Поставка удалена полностью.")
             st.write(f"Удалено камней: {result['stones_deleted']}")
             st.write(f"Удалено строк поставки: {result['shipment_rows_deleted']}")
@@ -278,11 +242,12 @@ elif page == "Камни":
         selected = st.selectbox("Поставка", shipments)
         view = stones if selected == "Все поставки" else stones[stones["shipment_id"].astype(str) == selected]
         st.caption("Этап 1: просмотр без редактирования.")
-        compact_table(
-            view,
-            ["stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity", "kurgin_score", "score_status", "catalog_section", "status", "availability_status", "shipment_id", "warning_message"],
-            height=520,
-        )
+        compact_table(view, [
+            "stone_id", "report_number", "stock_number", "shape", "weight", "color", "clarity",
+            "fluorescence", "min_diameter", "max_diameter", "depth_mm",
+            "kurgin_score", "score_status", "catalog_section", "status", "availability_status",
+            "shipment_id", "warning_message"
+        ], height=520)
 
 elif page == "Журнал импорта":
     st.title("Журнал импорта")
@@ -290,9 +255,11 @@ elif page == "Журнал импорта":
     if log.empty:
         st.info("Журнал пока пуст.")
     else:
-        compact_table(log, ["import_id", "source_file", "imported_at", "rows_total", "rows_saved", "rows_not_saved", "warnings_count", "conflicts_count", "status", "message"], height=420)
+        compact_table(log, [
+            "import_id", "source_file", "imported_at", "rows_total", "rows_saved", "rows_not_saved",
+            "warnings_count", "conflicts_count", "status", "message"
+        ], height=420)
 
 elif page == "Правила":
     st.title("Правила")
-    st.write("Основные rules-документы лежат в папке `rules/`.")
-    st.info("Этап 1 не редактирует правила из интерфейса. Изменения правил принимаются только после обсуждения.")
+    st.info("Изменения правил принимаются только после обсуждения. Этап 1 включает безопасное удаление конкретной поставки.")

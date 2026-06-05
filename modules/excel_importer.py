@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
-import re
 import pandas as pd
 
 from .schema import REQUIRED_SHEETS, STONES_COLUMNS
@@ -32,8 +29,25 @@ def _num(value):
         return None
 
 
+def _first_existing(row, names: list[str]):
+    for name in names:
+        if name in row.index:
+            value = row.get(name, "")
+            if not pd.isna(value) and str(value).strip():
+                return value
+    return ""
+
+
+def _safe_cell_text(value) -> str:
+    if pd.isna(value):
+        return ""
+    cell = str(value).strip()
+    if not cell or cell.lower() == "nan":
+        return ""
+    return cell
+
+
 def _is_colored_future_section(color_value: str) -> bool:
-    # Conservative future-section detector. Normal D-Z diamond colors are not treated as colored.
     text = (color_value or "").upper()
     fancy_words = ["FANCY", "PINK", "BLUE", "GREEN", "YELLOW", "ORANGE", "PURPLE", "RED", "BROWN"]
     if text in list("DEFGHIJKLMNOPQRSTUVWXYZ"):
@@ -42,28 +56,24 @@ def _is_colored_future_section(color_value: str) -> bool:
 
 
 def get_template_version(system_df: pd.DataFrame) -> str:
-    """Safely extract version/service info from the System sheet.
-
-    Streamlit Cloud / pandas versions can be strict about non-string values
-    inside row-wise apply. This implementation avoids row-wise apply and
-    explicitly converts every cell to a safe string.
-    """
     if system_df is None or system_df.empty:
         return ""
 
     candidates = ["Formula Output Version", "Engine Version", "Output Version", "Template Version"]
 
     for _, row in system_df.iterrows():
-        values = []
-        for value in row.tolist():
-            if pd.isna(value):
-                continue
-            text_value = str(value).strip()
-            if text_value and text_value.lower() != "nan":
-                values.append(text_value)
-
+        values = [_safe_cell_text(v) for v in row.tolist()]
+        values = [v for v in values if v]
+        if not values:
+            continue
         joined = " ".join(values)
-        if any(field in joined for field in candidates):
+        if any(candidate in joined for candidate in candidates):
+            return " | ".join(values[:4])
+
+    for _, row in system_df.iterrows():
+        values = [_safe_cell_text(v) for v in row.tolist()]
+        values = [v for v in values if v]
+        if values:
             return " | ".join(values[:4])
 
     return ""
@@ -78,8 +88,7 @@ def read_workbook(uploaded_bytes: bytes) -> tuple[dict[str, pd.DataFrame], list[
 
     missing = [sheet for sheet in REQUIRED_SHEETS if sheet not in xls.sheet_names]
     if missing:
-        errors.append("Нет обязательных листов: " + ", ".join(missing))
-        return {}, errors
+        return {}, ["Нет обязательных листов: " + ", ".join(missing)]
 
     data: dict[str, pd.DataFrame] = {}
     for sheet in REQUIRED_SHEETS:
@@ -108,12 +117,9 @@ def build_details_lookup(details_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["Report #", "Stock #", "KURGIN Import ID"])
     cols = [c for c in ["Report #", "Stock #", "KURGIN Import ID"] if c in details_df.columns]
     lookup = details_df[cols].copy()
-    if "Report #" not in lookup.columns:
-        lookup["Report #"] = ""
-    if "Stock #" not in lookup.columns:
-        lookup["Stock #"] = ""
-    if "KURGIN Import ID" not in lookup.columns:
-        lookup["KURGIN Import ID"] = ""
+    for col in ["Report #", "Stock #", "KURGIN Import ID"]:
+        if col not in lookup.columns:
+            lookup[col] = ""
     return lookup.drop_duplicates()
 
 
@@ -128,10 +134,8 @@ def build_issues_lookup(issues_df: pd.DataFrame) -> dict[str, list[str]]:
         problem = _str(row.get("Problem", ""))
         recommendation = _str(row.get("recommendation_ru", ""))
         parts = [p for p in [issue_type, problem, recommendation] if p]
-        msg = " | ".join(parts)
-        if not report:
-            continue
-        lookup.setdefault(report, []).append(msg)
+        if report:
+            lookup.setdefault(report, []).append(" | ".join(parts))
     return lookup
 
 
@@ -150,33 +154,15 @@ def classify_section(weight, color_value: str) -> tuple[str, str, bool]:
     return "", "Вне текущей версии.", False
 
 
-def normalize_stones(
-    results_df: pd.DataFrame,
-    details_df: pd.DataFrame,
-    issues_df: pd.DataFrame,
-    shipment: dict,
-    import_id: str,
-    original_filename: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def normalize_stones(results_df, details_df, issues_df, shipment, import_id, original_filename):
     details_lookup = build_details_lookup(details_df)
     issues_lookup = build_issues_lookup(issues_df)
     existing_stones = read_stones()
     existing_ids = set(existing_stones.get("stone_id", pd.Series(dtype=str)).astype(str).tolist())
     existing_reports = set(existing_stones.get("report_number", pd.Series(dtype=str)).astype(str).tolist())
 
-    rows_saved = []
-    rows_not_saved = []
-    stats = {
-        "total": len(results_df),
-        "saved": 0,
-        "not_saved": 0,
-        "round": 0,
-        "not_round": 0,
-        "main": 0,
-        "large": 0,
-        "warnings": 0,
-        "conflicts": 0,
-    }
+    rows_saved, rows_not_saved = [], []
+    stats = {"total": len(results_df), "saved": 0, "not_saved": 0, "round": 0, "not_round": 0, "main": 0, "large": 0, "warnings": 0, "conflicts": 0}
 
     for idx, row in results_df.iterrows():
         report = _str(row.get("Report #", ""))
@@ -200,7 +186,6 @@ def normalize_stones(
         elif section == "large":
             stats["large"] += 1
 
-        # Find KURGIN Import ID
         kurgin_import_id = ""
         if report and not details_lookup.empty:
             match = details_lookup[details_lookup["Report #"].astype(str) == report]
@@ -211,20 +196,12 @@ def normalize_stones(
             if not match.empty:
                 kurgin_import_id = _str(match.iloc[0].get("KURGIN Import ID", ""))
 
-        if kurgin_import_id:
-            stone_id = kurgin_import_id
-        elif report:
-            stone_id = f"KRG-{report}"
-        else:
-            stone_id = f"KRG-{import_id}-{idx+1:04d}"
+        stone_id = kurgin_import_id or (f"KRG-{report}" if report else f"KRG-{import_id}-{idx+1:04d}")
 
         warning_messages = issues_lookup.get(report, [])
-        validation_status = "ok"
-        validation_message = ""
-
+        validation_status = "warning" if warning_messages else "ok"
+        validation_message = " || ".join(warning_messages) if warning_messages else ""
         if warning_messages:
-            validation_status = "warning"
-            validation_message = " || ".join(warning_messages)
             stats["warnings"] += 1
 
         conflict_messages = []
@@ -251,7 +228,11 @@ def normalize_stones(
             "cut": _str(row.get("Cut", "")),
             "polish": _str(row.get("Polish", "")),
             "symmetry": _str(row.get("Symmetry", "")),
+            "fluorescence": _str(row.get("Fluorescence", "")),
             "measurements": _str(row.get("Measurements", "")),
+            "min_diameter": _clean_value(_first_existing(row, ["MinDiameter", "Min Diameter", "Min Diameter MM", "min_diameter"])),
+            "max_diameter": _clean_value(_first_existing(row, ["MaxDiameter", "Max Diameter", "Max Diameter MM", "max_diameter"])),
+            "depth_mm": _clean_value(_first_existing(row, ["DepthMM", "Depth MM", "Depth Mm", "depth_mm"])),
             "kurgin_score": kurgin_score,
             "score_status": score_status,
             "catalog_section": section,
@@ -275,9 +256,8 @@ def normalize_stones(
         if should_save and not conflict_messages:
             rows_saved.append(base)
         else:
-            reason = validation_message if conflict_messages else section_label
             out = base.copy()
-            out["not_saved_reason"] = reason or "Вне текущей версии — не сохраняется."
+            out["not_saved_reason"] = validation_message if conflict_messages else section_label
             rows_not_saved.append(out)
 
     saved_df = pd.DataFrame(rows_saved)

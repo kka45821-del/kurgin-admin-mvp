@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 import pandas as pd
 
-from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE
+from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR
 from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS
 
 
@@ -58,6 +58,10 @@ def backup_existing_files(label: str) -> Path:
         if path.exists():
             shutil.copy2(path, backup_dir / path.name)
 
+    raw_snapshot = backup_dir / "raw_snapshot"
+    if RAW_DIR.exists():
+        shutil.copytree(RAW_DIR, raw_snapshot, dirs_exist_ok=True)
+
     return backup_dir
 
 
@@ -80,11 +84,11 @@ def generate_import_id() -> str:
     today = datetime.now().strftime("%Y%m%d")
     prefix = f"IMP-{today}-"
 
-    shipments = read_shipments()
     used = []
+    shipments = read_shipments()
+    log = read_import_log()
     if "import_id" in shipments.columns:
         used += shipments["import_id"].dropna().astype(str).tolist()
-    log = read_import_log()
     if "import_id" in log.columns:
         used += log["import_id"].dropna().astype(str).tolist()
 
@@ -99,14 +103,11 @@ def generate_import_id() -> str:
     return f"{prefix}{next_num:03d}"
 
 
-
 def get_shipment_delete_preview(import_id: str) -> dict:
-    """Return counts/files affected by full shipment deletion."""
-    ensure_data_files()
     stones = read_stones()
     shipments = read_shipments()
     log = read_import_log()
-    raw_dir = __import__('modules.paths', fromlist=['RAW_DIR']).RAW_DIR / import_id
+    raw_dir = RAW_DIR / import_id
 
     return {
         "import_id": import_id,
@@ -119,9 +120,7 @@ def get_shipment_delete_preview(import_id: str) -> dict:
 
 
 def delete_shipment_completely(import_id: str) -> dict:
-    """Delete one shipment, its stones, import log rows, and raw folder after backup."""
     ensure_data_files()
-    from .paths import RAW_DIR
     backup_dir = backup_existing_files(f"before_delete_{import_id}")
 
     stones = read_stones()

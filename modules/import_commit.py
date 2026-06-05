@@ -1,26 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
-from io import BytesIO
 import pandas as pd
 
 from .paths import RAW_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE
 from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS
-from .storage import backup_existing_files, append_csv, atomic_write_csv
+from .storage import backup_existing_files, append_csv
 
 
-def commit_import(
-    import_id: str,
-    uploaded_bytes: bytes,
-    workbook: dict[str, pd.DataFrame],
-    saved_stones: pd.DataFrame,
-    not_saved_count: int,
-    stats: dict,
-    shipment: dict,
-    original_filename: str,
-    excel_template_version: str,
-) -> dict:
+def commit_import(import_id, uploaded_bytes, workbook, saved_stones, not_saved_count, stats, shipment, original_filename, excel_template_version):
     backup_dir = backup_existing_files(f"before_import_{import_id}")
 
     raw_dir = RAW_DIR / import_id
@@ -73,8 +61,4 @@ def commit_import(
     append_csv(SHIPMENTS_FILE, SHIPMENTS_COLUMNS, shipment_row)
     append_csv(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS, log_row)
 
-    return {
-        "backup_dir": str(backup_dir),
-        "raw_dir": str(raw_dir),
-        "original_path": str(original_path),
-    }
+    return {"backup_dir": str(backup_dir), "raw_dir": str(raw_dir), "original_path": str(original_path)}
