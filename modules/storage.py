@@ -491,3 +491,107 @@ def update_currency_rates(df: pd.DataFrame) -> dict:
     backup_dir = backup_existing_files("before_update_currency_rates")
     atomic_write_csv(_prepare_price_df(df, CURRENCY_RATES_COLUMNS), CURRENCY_RATES_FILE)
     return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+
+
+def _float_value(value, default: float = 0.0) -> float:
+    try:
+        text = str(value).strip().replace(",", ".")
+        if not text:
+            return default
+        return float(text)
+    except Exception:
+        return default
+
+
+def calculate_root_price_table() -> pd.DataFrame:
+    """Calculate root price-per-carat chain in USD.
+
+    6B scope only:
+    supplier -> internal -> start -> working -> public.
+    No KURGIN Score, no Index, no stone-level final price.
+    """
+    ensure_price_files()
+
+    supplier = read_price_supplier()
+    expenses = read_price_expense_rates()
+    margins = read_price_margins()
+
+    active_expenses = expenses[
+        expenses["is_active"].astype(str).str.lower().isin(["true", "1", "yes", "да", "истина"])
+    ].copy()
+    total_expense_rate = active_expenses["rate"].map(_float_value).sum()
+
+    margin_map = {}
+    for _, row in margins.iterrows():
+        margin_type = str(row.get("margin_type", "")).strip()
+        weight_range_id = str(row.get("weight_range_id", "")).strip()
+        numerator = _float_value(row.get("numerator", "0"))
+        divisor = _float_value(row.get("divisor", "1"), default=1.0)
+        if divisor == 0:
+            divisor = 1.0
+        margin_map[(margin_type, weight_range_id)] = numerator / divisor
+
+    rows = []
+    for _, row in supplier.iterrows():
+        weight_range_id = str(row.get("weight_range_id", "")).strip()
+        supplier_price = _float_value(row.get("supplier_price_per_ct_usd", "0"))
+
+        internal_price = supplier_price * (1 + total_expense_rate)
+        start_margin = margin_map.get(("start", weight_range_id), 0.0)
+        working_margin = margin_map.get(("working", weight_range_id), 0.0)
+        public_margin = margin_map.get(("public", weight_range_id), 0.0)
+
+        start_price = internal_price + start_margin
+        working_price = start_price + working_margin
+        public_price = working_price + public_margin
+
+        rows.append({
+            "weight_range_id": weight_range_id,
+            "color": row.get("color", ""),
+            "clarity": row.get("clarity", ""),
+            "supplier_price_per_ct_usd": round(supplier_price, 2),
+            "internal_price_per_ct_usd": round(internal_price, 2),
+            "start_price_per_ct_usd": round(start_price, 2),
+            "working_price_per_ct_usd": round(working_price, 2),
+            "public_price_per_ct_usd": round(public_price, 2),
+            "total_expense_rate": round(total_expense_rate, 6),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def root_price_matrix_by_color(root_df: pd.DataFrame, price_column: str, color: str) -> pd.DataFrame:
+    """Return matrix: rows = clarity, columns = weight ranges for a selected color and price column."""
+    if root_df.empty:
+        return pd.DataFrame()
+
+    labels = {
+        "1.00-1.49": "1",
+        "1.50-1.99": "1.5",
+        "2.00-2.49": "2",
+        "2.50-2.99": "2.5",
+        "3.00-3.99": "3",
+        "4.00-4.99": "4",
+        "5.00+": "5+",
+    }
+    clarities = ["IF", "VVS1", "VVS2", "VS1", "VS2"]
+    weight_ids = ["1.00-1.49", "1.50-1.99", "2.00-2.49", "2.50-2.99", "3.00-3.99", "4.00-4.99", "5.00+"]
+
+    subset = root_df[root_df["color"].astype(str) == str(color)].copy()
+    rows = []
+    for clarity in clarities:
+        item = {"Чистота": clarity}
+        for weight_id in weight_ids:
+            match = subset[
+                (subset["clarity"].astype(str) == clarity)
+                & (subset["weight_range_id"].astype(str) == weight_id)
+            ]
+            value = ""
+            if not match.empty:
+                value = match.iloc[0].get(price_column, "")
+            item[labels[weight_id]] = value
+        rows.append(item)
+
+    return pd.DataFrame(rows)

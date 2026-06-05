@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -800,16 +800,17 @@ elif page == "Разделы":
 
 elif page == "Цены":
     st.title("Цены")
-    st.caption("Этап 6A: настройки цен. Здесь только ввод и сохранение исходных таблиц, без финального расчёта по камням.")
+    st.caption("Этап 6A/6B: настройки цен и расчёт корневых цен за карат. Пока без итоговых цен по камням, Index и публикации.")
 
-    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Полный расчёт, Index и просмотр маржи будут в следующих подэтапах.")
+    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Расчёт корневых цен за карат доступен во вкладке “Расчёт USD”. Index и просмотр маржи будут в следующих подэтапах.")
 
-    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates = st.tabs([
+    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates, tab_root = st.tabs([
         "Цена поставщика",
         "Расходы",
         "Маржи",
         "KURGIN Score",
         "Курсы валют",
+        "Расчёт USD",
     ])
 
     with tab_supplier:
@@ -993,6 +994,65 @@ elif page == "Цены":
             result = update_currency_rates(rates_edit)
             st.success("Курсы валют сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
+
+
+
+    with tab_root:
+        st.subheader("Расчёт корневых цен за карат, USD")
+        st.caption("6B: проверочный расчёт цепочки supplier → internal → start → working → public. Без KURGIN Score, без Index и без финальных цен по камням.")
+
+        root_df = calculate_root_price_table()
+
+        c1, c2 = st.columns(2)
+        with c1:
+            price_type = st.selectbox(
+                "Какую цену показать матрицей",
+                [
+                    "Цена поставщика",
+                    "Внутренняя цена",
+                    "Стартовая цена",
+                    "Рабочая цена",
+                    "Публичная цена",
+                ],
+                index=4,
+            )
+        with c2:
+            st.metric("Строк расчёта", len(root_df))
+
+        price_column_map = {
+            "Цена поставщика": "supplier_price_per_ct_usd",
+            "Внутренняя цена": "internal_price_per_ct_usd",
+            "Стартовая цена": "start_price_per_ct_usd",
+            "Рабочая цена": "working_price_per_ct_usd",
+            "Публичная цена": "public_price_per_ct_usd",
+        }
+        selected_price_column = price_column_map[price_type]
+
+        with st.expander("Расчёт по цветам", expanded=True):
+            for color in ["D", "E", "F", "G"]:
+                with st.expander(f"Цвет {color}", expanded=(color == "D")):
+                    matrix = root_price_matrix_by_color(root_df, selected_price_column, color)
+                    st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
+
+        with st.expander("Полная таблица расчёта", expanded=False):
+            st.dataframe(
+                root_df[
+                    [
+                        "weight_range_id",
+                        "color",
+                        "clarity",
+                        "supplier_price_per_ct_usd",
+                        "internal_price_per_ct_usd",
+                        "start_price_per_ct_usd",
+                        "working_price_per_ct_usd",
+                        "public_price_per_ct_usd",
+                        "total_expense_rate",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+            )
 
 
 elif page == "Журнал импорта":
