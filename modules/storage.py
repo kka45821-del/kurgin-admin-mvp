@@ -49,6 +49,7 @@ def read_shipments() -> pd.DataFrame:
 def read_import_log() -> pd.DataFrame:
     return read_csv_safe(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS)
 
+
 def read_payments() -> pd.DataFrame:
     return read_csv_safe(PAYMENTS_FILE, PAYMENTS_COLUMNS)
 
@@ -134,7 +135,6 @@ def update_stone_admin_fields(
     return {"updated": True, "message": "Камень сохранён.", "backup_dir": str(backup_dir)}
 
 
-
 def update_shipment_fields(shipment_id: str, data: dict) -> dict:
     ensure_data_files()
     backup_dir = backup_existing_files(f"before_update_shipment_{shipment_id}")
@@ -174,6 +174,7 @@ def delete_payment(payment_id: str) -> dict:
     payments = payments[payments["payment_id"].astype(str) != str(payment_id)]
     atomic_write_csv(payments, PAYMENTS_FILE)
     return {"deleted": before - len(payments), "backup_dir": str(backup_dir)}
+
 
 def get_shipment_delete_preview(import_id: str) -> dict:
     stones = read_stones()
@@ -237,6 +238,17 @@ def delete_shipment_completely(import_id: str) -> dict:
     }
 
 
+def _safe_scalar(value) -> str:
+    """Return a single safe string value for assignment into a CSV-backed cell."""
+    if isinstance(value, pd.Series):
+        value = value.iloc[0] if not value.empty else ""
+    if isinstance(value, (list, tuple, dict, set)):
+        value = str(value)
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
 def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, source_file: str) -> dict:
     """Update existing stones by report_number using new Excel-derived data.
 
@@ -266,22 +278,26 @@ def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, 
         and col not in {"stone_id"}
     ]
 
-    updated = 0
+    updated_reports = set()
     for _, new_row in update_df.iterrows():
         report = str(new_row.get("report_number", "")).strip()
         if not report:
             continue
-        mask = stones["report_number"].astype(str) == report
-        if not mask.any():
+
+        matching_indexes = stones.index[stones["report_number"].astype(str) == report].tolist()
+        if not matching_indexes:
             continue
 
-        for col in update_allowed:
-            stones.loc[mask, col] = new_row.get(col, "")
+        # Report # is unique by rule. If legacy data has duplicates, update all matched rows safely.
+        for row_index in matching_indexes:
+            for col in update_allowed:
+                stones.at[row_index, col] = _safe_scalar(new_row.get(col, ""))
 
-        stones.loc[mask, "updated_at"] = datetime.now().isoformat(timespec="seconds")
-        stones.loc[mask, "updated_import_id"] = import_id
-        stones.loc[mask, "last_source_file"] = source_file
-        updated += int(mask.sum())
+            stones.at[row_index, "updated_at"] = datetime.now().isoformat(timespec="seconds")
+            stones.at[row_index, "updated_import_id"] = str(import_id)
+            stones.at[row_index, "last_source_file"] = str(source_file)
+
+        updated_reports.add(report)
 
     atomic_write_csv(stones, STONES_FILE)
-    return {"updated": updated, "backup_dir": str(backup_dir)}
+    return {"updated": len(updated_reports), "backup_dir": str(backup_dir)}
