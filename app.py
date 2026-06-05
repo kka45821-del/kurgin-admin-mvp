@@ -29,11 +29,16 @@ STATUS_LABELS = {"draft": "Черновик", "ready": "Готов", "published"
 AVAIL_LABELS = {"in_stock": "В наличии", "reserved": "Забронирован", "sold": "Продан", "removed": "Снят с продажи"}
 SECTION_LABELS = {"main": "Основной каталог", "large": "Крупные камни", "": "Вне текущей версии"}
 SCORE_LABELS = {"calculated": "Рассчитан", "not_available_for_shape": "Недоступен для формы"}
+NUMERIC_COLUMNS = ["weight", "kurgin_score", "min_diameter", "max_diameter", "depth_mm"]
+
 
 def labelize(df):
     if df.empty:
         return df
     view = df.copy()
+    for col in NUMERIC_COLUMNS:
+        if col in view.columns:
+            view[col] = pd.to_numeric(view[col], errors="coerce")
     for col, mapping in [
         ("status", STATUS_LABELS),
         ("availability_status", AVAIL_LABELS),
@@ -43,6 +48,7 @@ def labelize(df):
         if col in view.columns:
             view[col] = view[col].map(mapping).fillna(view[col])
     return view
+
 
 def compact_table(df, columns, height=360):
     cols = [c for c in columns if c in df.columns]
