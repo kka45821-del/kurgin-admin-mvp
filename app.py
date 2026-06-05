@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, update_existing_stones_from_import
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -464,7 +464,7 @@ def conflict_resolution_ui(preview):
     st.session_state["conflict_actions"] = actions
 
 
-page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Журнал импорта", "Правила"])
+page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Разделы", "Журнал импорта", "Правила"])
 
 if page == "Загрузка поставки":
     st.title("Загрузка поставки")
@@ -757,6 +757,46 @@ elif page == "Камни":
             selected_stone = st.selectbox("Открыть карточку камня", filtered["stone_id"].astype(str).tolist())
             stone_card(stones, selected_stone)
 
+
+elif page == "Разделы":
+    st.title("Разделы каталога")
+    st.caption("Этап 5: управление двумя разделами первой версии.")
+
+    sections = read_catalog_sections()
+    st.info("Редактируются только настройки разделов. Раздел конкретного камня здесь не меняется.")
+
+    editable = sections.copy()
+    editable["is_public"] = editable["is_public"].astype(str).str.lower().map(lambda x: x in {"true", "1", "yes", "да", "истина"})
+    editable["sort_order"] = pd.to_numeric(editable["sort_order"], errors="coerce").fillna(1).astype(int)
+
+    edited = st.data_editor(
+        editable,
+        use_container_width=True,
+        hide_index=True,
+        disabled=["section_id"],
+        column_config={
+            "section_id": st.column_config.TextColumn("Код раздела"),
+            "section_name_ru": st.column_config.TextColumn("Название RU"),
+            "section_name_en": st.column_config.TextColumn("Название EN"),
+            "is_public": st.column_config.CheckboxColumn("Показывать публично"),
+            "sort_order": st.column_config.NumberColumn("Порядок", min_value=1, step=1),
+            "comment": st.column_config.TextColumn("Комментарий"),
+        },
+        key="catalog_sections_editor",
+    )
+
+    if st.button("Сохранить разделы", type="primary"):
+        to_save = edited.copy()
+        to_save["is_public"] = to_save["is_public"].map(lambda x: "true" if bool(x) else "false")
+        result = update_catalog_sections(to_save)
+        st.success(f"Разделы сохранены. Backup: {result['backup_dir']}")
+        st.rerun()
+
+    st.subheader("Правило веса")
+    st.write("Основной каталог: от 1.00 ct включительно до 3.00 ct не включительно.")
+    st.write("Крупные камни: от 3.00 ct включительно и выше.")
+
+
 elif page == "Журнал импорта":
     st.title("Журнал импорта")
     log = read_import_log()
@@ -770,4 +810,4 @@ elif page == "Журнал импорта":
 
 elif page == "Правила":
     st.title("Правила")
-    st.info("Этап 4: Конфликты Report # и повторные загрузки. Изменения правил принимаются только после обсуждения.")
+    st.info("Этап 5: Разделы каталога. Изменения правил принимаются только после обсуждения.")

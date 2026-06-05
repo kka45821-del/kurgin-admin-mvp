@@ -85,3 +85,13 @@ PAYMENTS_COLUMNS = [
     "comment",
     "created_at",
 ]
+
+
+CATALOG_SECTIONS_COLUMNS = [
+    "section_id",
+    "section_name_ru",
+    "section_name_en",
+    "is_public",
+    "sort_order",
+    "comment",
+]

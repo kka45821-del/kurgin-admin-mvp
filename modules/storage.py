@@ -5,8 +5,8 @@ from pathlib import Path
 import shutil
 import pandas as pd
 
-from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE
-from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS
+from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE, CATALOG_SECTIONS_FILE
+from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS, CATALOG_SECTIONS_COLUMNS
 
 
 def now_stamp() -> str:
@@ -24,6 +24,7 @@ def ensure_data_files() -> None:
     ensure_csv(SHIPMENTS_FILE, SHIPMENTS_COLUMNS)
     ensure_csv(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS)
     ensure_csv(PAYMENTS_FILE, PAYMENTS_COLUMNS)
+    ensure_catalog_sections()
 
 
 def read_csv_safe(path: Path, columns: list[str]) -> pd.DataFrame:
@@ -49,7 +50,6 @@ def read_shipments() -> pd.DataFrame:
 def read_import_log() -> pd.DataFrame:
     return read_csv_safe(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS)
 
-
 def read_payments() -> pd.DataFrame:
     return read_csv_safe(PAYMENTS_FILE, PAYMENTS_COLUMNS)
 
@@ -59,7 +59,7 @@ def backup_existing_files(label: str) -> Path:
     backup_dir = BACKUPS_DIR / f"{now_stamp()}_{label}"
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    for path in [STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, PAYMENTS_FILE]:
+    for path in [STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, PAYMENTS_FILE, CATALOG_SECTIONS_FILE]:
         if path.exists():
             shutil.copy2(path, backup_dir / path.name)
 
@@ -135,6 +135,7 @@ def update_stone_admin_fields(
     return {"updated": True, "message": "Камень сохранён.", "backup_dir": str(backup_dir)}
 
 
+
 def update_shipment_fields(shipment_id: str, data: dict) -> dict:
     ensure_data_files()
     backup_dir = backup_existing_files(f"before_update_shipment_{shipment_id}")
@@ -174,7 +175,6 @@ def delete_payment(payment_id: str) -> dict:
     payments = payments[payments["payment_id"].astype(str) != str(payment_id)]
     atomic_write_csv(payments, PAYMENTS_FILE)
     return {"deleted": before - len(payments), "backup_dir": str(backup_dir)}
-
 
 def get_shipment_delete_preview(import_id: str) -> dict:
     stones = read_stones()
@@ -288,7 +288,6 @@ def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, 
         if not matching_indexes:
             continue
 
-        # Report # is unique by rule. If legacy data has duplicates, update all matched rows safely.
         for row_index in matching_indexes:
             for col in update_allowed:
                 stones.at[row_index, col] = _safe_scalar(new_row.get(col, ""))
@@ -301,3 +300,40 @@ def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, 
 
     atomic_write_csv(stones, STONES_FILE)
     return {"updated": len(updated_reports), "backup_dir": str(backup_dir)}
+
+
+
+def ensure_catalog_sections() -> None:
+    ensure_dirs()
+    if not CATALOG_SECTIONS_FILE.exists():
+        df = pd.DataFrame([
+            {"section_id": "main", "section_name_ru": "Основной каталог", "section_name_en": "Main Catalog", "is_public": "true", "sort_order": "1", "comment": ""},
+            {"section_id": "large", "section_name_ru": "Крупные камни", "section_name_en": "Large Stones", "is_public": "true", "sort_order": "2", "comment": ""},
+        ], columns=CATALOG_SECTIONS_COLUMNS)
+        df.to_csv(CATALOG_SECTIONS_FILE, index=False)
+
+
+def read_catalog_sections() -> pd.DataFrame:
+    ensure_catalog_sections()
+    return read_csv_safe(CATALOG_SECTIONS_FILE, CATALOG_SECTIONS_COLUMNS)
+
+
+def update_catalog_sections(sections_df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_catalog_sections")
+    allowed_ids = {"main", "large"}
+    df = sections_df.copy().fillna("")
+    for col in CATALOG_SECTIONS_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[df["section_id"].astype(str).isin(allowed_ids)].copy()
+
+    existing = set(df["section_id"].astype(str).tolist())
+    if "main" not in existing:
+        df = pd.concat([df, pd.DataFrame([{"section_id": "main", "section_name_ru": "Основной каталог", "section_name_en": "Main Catalog", "is_public": "true", "sort_order": "1", "comment": ""}])], ignore_index=True)
+    if "large" not in existing:
+        df = pd.concat([df, pd.DataFrame([{"section_id": "large", "section_name_ru": "Крупные камни", "section_name_en": "Large Stones", "is_public": "true", "sort_order": "2", "comment": ""}])], ignore_index=True)
+
+    df["is_public"] = df["is_public"].astype(str).str.lower().map(lambda x: "true" if x in {"true", "1", "yes", "да", "истина"} else "false")
+    atomic_write_csv(df[CATALOG_SECTIONS_COLUMNS], CATALOG_SECTIONS_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
