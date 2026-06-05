@@ -34,6 +34,9 @@ STONES_COLUMNS = [
     "validation_message",
     "warning_status",
     "warning_message",
+    "updated_at",
+    "updated_import_id",
+    "last_source_file",
 ]
 
 SHIPMENTS_COLUMNS = [

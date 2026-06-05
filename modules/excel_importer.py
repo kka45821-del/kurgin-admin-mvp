@@ -205,8 +205,6 @@ def normalize_stones(results_df, details_df, issues_df, shipment, import_id, ori
             stats["warnings"] += 1
 
         conflict_messages = []
-        if stone_id in existing_ids:
-            conflict_messages.append("Совпадает stone_id")
         if report and report in existing_reports:
             conflict_messages.append("Совпадает Report #")
 
@@ -272,3 +270,25 @@ def normalize_stones(results_df, details_df, issues_df, shipment, import_id, ori
     stats["saved"] = len(saved_df)
     stats["not_saved"] = len(not_saved_df)
     return saved_df, not_saved_df, stats
+
+
+def split_conflicts(saved_df: pd.DataFrame, not_saved_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return conflict rows and non-conflict not-saved rows."""
+    if not_saved_df is None or not_saved_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    if "not_saved_reason" not in not_saved_df.columns:
+        return pd.DataFrame(), not_saved_df
+    mask = not_saved_df["not_saved_reason"].astype(str).str.contains("Report #", case=False, na=False)
+    return not_saved_df[mask].copy(), not_saved_df[~mask].copy()
+
+
+def apply_report_corrections_to_results(results_df: pd.DataFrame, corrections: dict[str, str]) -> pd.DataFrame:
+    """Apply Report # corrections to a Results dataframe before normalizing stones.
+
+    corrections maps original Report # -> corrected Report #.
+    """
+    if not corrections or "Report #" not in results_df.columns:
+        return results_df
+    corrected = results_df.copy()
+    corrected["Report #"] = corrected["Report #"].astype(str).apply(lambda x: corrections.get(x, x))
+    return corrected

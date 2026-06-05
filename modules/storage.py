@@ -235,3 +235,53 @@ def delete_shipment_completely(import_id: str) -> dict:
         "payments_deleted": payments_before - len(payments),
         "raw_deleted": raw_deleted,
     }
+
+
+def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, source_file: str) -> dict:
+    """Update existing stones by report_number using new Excel-derived data.
+
+    Manual/admin fields are preserved:
+    published_price, status, availability_status, catalog_section, admin_note, price_comment.
+    """
+    ensure_data_files()
+    backup_dir = backup_existing_files(f"before_update_existing_{import_id}")
+
+    stones = read_stones()
+    if stones.empty or update_df.empty:
+        return {"updated": 0, "backup_dir": str(backup_dir)}
+
+    manual_fields = {
+        "published_price",
+        "status",
+        "availability_status",
+        "catalog_section",
+        "admin_note",
+        "price_comment",
+    }
+
+    update_allowed = [
+        col for col in update_df.columns
+        if col in stones.columns
+        and col not in manual_fields
+        and col not in {"stone_id"}
+    ]
+
+    updated = 0
+    for _, new_row in update_df.iterrows():
+        report = str(new_row.get("report_number", "")).strip()
+        if not report:
+            continue
+        mask = stones["report_number"].astype(str) == report
+        if not mask.any():
+            continue
+
+        for col in update_allowed:
+            stones.loc[mask, col] = new_row.get(col, "")
+
+        stones.loc[mask, "updated_at"] = datetime.now().isoformat(timespec="seconds")
+        stones.loc[mask, "updated_import_id"] = import_id
+        stones.loc[mask, "last_source_file"] = source_file
+        updated += int(mask.sum())
+
+    atomic_write_csv(stones, STONES_FILE)
+    return {"updated": updated, "backup_dir": str(backup_dir)}

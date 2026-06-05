@@ -8,14 +8,14 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment
+    update_shipment_fields, add_payment, delete_payment, update_existing_stones_from_import
 )
-from modules.excel_importer import read_workbook, normalize_stones, get_template_version
+from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
 from modules.raw_lookup import get_stone_raw, transpose_one_row
 from modules.shipment_files import list_attachments, save_attachment, delete_attachment
 
-st.set_page_config(page_title="KURGIN Admin — Этап 2", layout="wide")
+st.set_page_config(page_title="KURGIN Admin — Этап 4", layout="wide")
 st.markdown('''
 <style>
 .block-container {padding-top: 1rem; padding-bottom: 1rem; max-width: 1500px;}
@@ -407,6 +407,63 @@ def shipment_card(shipment_id, shipments, stones, payments):
     with st.expander("Камни этой поставки", expanded=False):
         compact_table(ss, ["stone_id", "report_number", "shape", "weight", "color", "clarity", "kurgin_score", "catalog_section", "status", "availability_status", "warning_message"], height=360)
 
+
+
+def conflict_resolution_ui(preview):
+    conflicts_df, other_not_saved_df = split_conflicts(preview["saved_df"], preview["not_saved_df"])
+    if conflicts_df.empty:
+        return
+
+    st.error(f"Найдены конфликты Report #: {len(conflicts_df)}")
+    st.caption("Report # уникален. Один Report # = один камень. Конфликты нужно решить до подтверждения импорта.")
+
+    existing_stones = read_stones()
+    actions = {}
+
+    with st.expander("Конфликты Report #", expanded=True):
+        for idx, row in conflicts_df.iterrows():
+            report = str(row.get("report_number", ""))
+            existing = existing_stones[existing_stones["report_number"].astype(str) == report]
+            st.markdown(f"### Report # {report}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("**Новая строка из Excel**")
+                st.write(f"Stone ID: {row.get('stone_id', '')}")
+                st.write(f"Stock #: {row.get('stock_number', '')}")
+                st.write(f"Shape: {row.get('shape', '')}")
+                st.write(f"Weight: {row.get('weight', '')}")
+                st.write(f"Color / Clarity: {row.get('color', '')} / {row.get('clarity', '')}")
+                st.write(f"Score: {row.get('kurgin_score', '')}")
+            with c2:
+                st.write("**Уже есть в базе**")
+                if existing.empty:
+                    st.warning("Не найден в базе, хотя конфликт отмечен.")
+                else:
+                    ex = existing.iloc[0]
+                    st.write(f"Stone ID: {ex.get('stone_id', '')}")
+                    st.write(f"Поставка: {ex.get('shipment_id', '')}")
+                    st.write(f"Shape: {ex.get('shape', '')}")
+                    st.write(f"Weight: {ex.get('weight', '')}")
+                    st.write(f"Color / Clarity: {ex.get('color', '')} / {ex.get('clarity', '')}")
+                    st.write(f"Score: {ex.get('kurgin_score', '')}")
+
+            action = st.radio(
+                "Действие",
+                ["Пропустить строку", "Обновить существующий камень", "Исправить Report # в новой строке"],
+                key=f"conflict_action_{idx}",
+                horizontal=True,
+            )
+
+            corrected_report = ""
+            if action == "Исправить Report # в новой строке":
+                corrected_report = st.text_input("Новый Report # для этой строки", key=f"correct_report_{idx}")
+
+            actions[idx] = {"action": action, "old_report": report, "new_report": corrected_report}
+
+    st.session_state["conflict_actions"] = actions
+
+
 page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Журнал импорта", "Правила"])
 
 if page == "Загрузка поставки":
@@ -511,9 +568,10 @@ if page == "Загрузка поставки":
             st.caption(f"Версия / служебная информация: {preview.get('template_version')}")
 
         if stats.get("conflicts", 0):
-            st.error("Найдены конфликты ID. Этап 1 не перезаписывает существующие камни.")
+            st.error("Найдены конфликты Report #. Этап 4 позволяет исправить / обновить / пропустить.")
+            conflict_resolution_ui(preview)
         else:
-            st.success("Конфликтов ID не найдено.")
+            st.success("Конфликтов Report # не найдено.")
 
         with st.expander("Камни, которые будут сохранены", expanded=True):
             compact_table(preview["saved_df"], [
@@ -534,15 +592,82 @@ if page == "Загрузка поставки":
 
         b1, b2, b3 = st.columns(3)
         with b1:
-            if st.button("Подтвердить импорт", type="primary", use_container_width=True, disabled=stats.get("conflicts", 0) > 0):
-                commit_import(
-                    preview["import_id"], preview["uploaded_bytes"], preview["workbook"], preview["saved_df"],
-                    stats.get("not_saved", 0), stats, preview["shipment"],
-                    preview["original_filename"], preview.get("template_version", "")
-                )
-                st.success("Поставка успешно импортирована.")
-                del st.session_state["preview"]
-                st.rerun()
+            if st.button("Подтвердить импорт", type="primary", use_container_width=True):
+                actions = st.session_state.get("conflict_actions", {})
+                conflicts_df, other_not_saved_df = split_conflicts(preview["saved_df"], preview["not_saved_df"])
+
+                corrections = {}
+                update_rows = []
+                unresolved = []
+
+                if not conflicts_df.empty:
+                    for idx, row in conflicts_df.iterrows():
+                        action_data = actions.get(idx)
+                        if not action_data:
+                            unresolved.append(str(row.get("report_number", "")))
+                            continue
+                        action = action_data.get("action")
+                        if action == "Исправить Report # в новой строке":
+                            new_report = str(action_data.get("new_report", "")).strip()
+                            if not new_report:
+                                unresolved.append(str(row.get("report_number", "")))
+                            else:
+                                corrections[str(row.get("report_number", ""))] = new_report
+                        elif action == "Обновить существующий камень":
+                            update_rows.append(row)
+                        elif action == "Пропустить строку":
+                            pass
+
+                if unresolved:
+                    st.error("Не все конфликты решены: " + ", ".join(unresolved))
+                else:
+                    workbook_to_commit = preview["workbook"].copy()
+                    saved_to_commit = preview["saved_df"].copy()
+
+                    if corrections:
+                        corrected_results = apply_report_corrections_to_results(workbook_to_commit["Results"], corrections)
+                        workbook_to_commit["Results"] = corrected_results
+                        corrected_saved, corrected_not_saved, corrected_stats = normalize_stones(
+                            corrected_results,
+                            workbook_to_commit["Details"],
+                            workbook_to_commit["Issues"],
+                            preview["shipment"],
+                            preview["import_id"],
+                            preview["original_filename"],
+                        )
+                        corrected_conflicts, corrected_other = split_conflicts(corrected_saved, corrected_not_saved)
+                        if not corrected_conflicts.empty:
+                            st.error("После исправления Report # всё ещё есть конфликты. Нажмите предпросмотр ещё раз и проверьте.")
+                            st.stop()
+                        saved_to_commit = pd.concat([saved_to_commit, corrected_saved], ignore_index=True)
+
+                    update_df = pd.DataFrame(update_rows) if update_rows else pd.DataFrame()
+
+                    commit_import(
+                        preview["import_id"],
+                        preview["uploaded_bytes"],
+                        workbook_to_commit,
+                        saved_to_commit,
+                        int(len(other_not_saved_df)),
+                        {**stats, "conflicts": 0, "saved": len(saved_to_commit), "not_saved": int(len(other_not_saved_df))},
+                        preview["shipment"],
+                        preview["original_filename"],
+                        preview.get("template_version", ""),
+                    )
+
+                    if not update_df.empty:
+                        update_result = update_existing_stones_from_import(
+                            update_df,
+                            preview["import_id"],
+                            preview["original_filename"],
+                        )
+                        st.info(f"Обновлено существующих камней: {update_result['updated']}")
+
+                    st.success("Поставка успешно импортирована.")
+                    if "conflict_actions" in st.session_state:
+                        del st.session_state["conflict_actions"]
+                    del st.session_state["preview"]
+                    st.rerun()
         with b2:
             if st.button("Отменить импорт", use_container_width=True):
                 del st.session_state["preview"]
@@ -645,4 +770,4 @@ elif page == "Журнал импорта":
 
 elif page == "Правила":
     st.title("Правила")
-    st.info("Изменения правил принимаются только после обсуждения. Этап 2: фильтры, поиск, карточка камня и административное редактирование.")
+    st.info("Этап 4: Конфликты Report # и повторные загрузки. Изменения правил принимаются только после обсуждения.")
