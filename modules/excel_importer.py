@@ -93,7 +93,7 @@ def read_workbook(uploaded_bytes: bytes) -> tuple[dict[str, pd.DataFrame], list[
     data: dict[str, pd.DataFrame] = {}
     for sheet in REQUIRED_SHEETS:
         try:
-            data[sheet] = pd.read_excel(xls, sheet)
+            data[sheet] = pd.read_excel(xls, sheet, keep_default_na=False)
         except Exception as exc:
             errors.append(f"Не удалось прочитать лист {sheet}: {exc}")
 

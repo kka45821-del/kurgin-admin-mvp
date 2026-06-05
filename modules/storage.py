@@ -5,8 +5,8 @@ from pathlib import Path
 import shutil
 import pandas as pd
 
-from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE, CATALOG_SECTIONS_FILE
-from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS, CATALOG_SECTIONS_COLUMNS
+from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE, PRICE_SUPPLIER_FILE, PRICE_EXPENSE_RATES_FILE, PRICE_MARGINS_FILE, PRICE_SCORE_COEFFICIENTS_FILE, CURRENCY_RATES_FILE, CATALOG_SECTIONS_FILE
+from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS, PRICE_SUPPLIER_COLUMNS, PRICE_EXPENSE_RATES_COLUMNS, PRICE_MARGINS_COLUMNS, PRICE_SCORE_COEFFICIENTS_COLUMNS, CURRENCY_RATES_COLUMNS, WEIGHT_RANGES, PRICE_COLORS, PRICE_CLARITIES, CATALOG_SECTIONS_COLUMNS
 
 
 def now_stamp() -> str:
@@ -24,6 +24,7 @@ def ensure_data_files() -> None:
     ensure_csv(SHIPMENTS_FILE, SHIPMENTS_COLUMNS)
     ensure_csv(IMPORT_LOG_FILE, IMPORT_LOG_COLUMNS)
     ensure_csv(PAYMENTS_FILE, PAYMENTS_COLUMNS)
+    ensure_price_files()
     ensure_catalog_sections()
 
 
@@ -59,7 +60,7 @@ def backup_existing_files(label: str) -> Path:
     backup_dir = BACKUPS_DIR / f"{now_stamp()}_{label}"
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    for path in [STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, PAYMENTS_FILE, CATALOG_SECTIONS_FILE]:
+    for path in [STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, PAYMENTS_FILE, CATALOG_SECTIONS_FILE, PRICE_SUPPLIER_FILE, PRICE_EXPENSE_RATES_FILE, PRICE_MARGINS_FILE, PRICE_SCORE_COEFFICIENTS_FILE, CURRENCY_RATES_FILE]:
         if path.exists():
             shutil.copy2(path, backup_dir / path.name)
 
@@ -336,4 +337,157 @@ def update_catalog_sections(sections_df: pd.DataFrame) -> dict:
 
     df["is_public"] = df["is_public"].astype(str).str.lower().map(lambda x: "true" if x in {"true", "1", "yes", "да", "истина"} else "false")
     atomic_write_csv(df[CATALOG_SECTIONS_COLUMNS], CATALOG_SECTIONS_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def ensure_price_files() -> None:
+    ensure_dirs()
+
+    if not PRICE_SUPPLIER_FILE.exists():
+        rows = []
+        for weight_id, _label in WEIGHT_RANGES:
+            for color in PRICE_COLORS:
+                for clarity in PRICE_CLARITIES:
+                    rows.append({
+                        "weight_range_id": weight_id,
+                        "color": color,
+                        "clarity": clarity,
+                        "supplier_price_per_ct_usd": "",
+                        "comment": "",
+                        "updated_at": "",
+                    })
+        pd.DataFrame(rows, columns=PRICE_SUPPLIER_COLUMNS).to_csv(PRICE_SUPPLIER_FILE, index=False)
+
+    if not PRICE_EXPENSE_RATES_FILE.exists():
+        pd.DataFrame([
+            {"expense_key": "customs", "expense_name_ru": "Таможня", "rate": "0.37", "is_active": "true", "comment": "", "updated_at": ""},
+            {"expense_key": "delivery", "expense_name_ru": "Доставка", "rate": "0.05", "is_active": "true", "comment": "", "updated_at": ""},
+            {"expense_key": "transfer", "expense_name_ru": "Переводы", "rate": "0.05", "is_active": "true", "comment": "", "updated_at": ""},
+            {"expense_key": "other", "expense_name_ru": "Иные траты", "rate": "0.05", "is_active": "true", "comment": "", "updated_at": ""},
+            {"expense_key": "extra", "expense_name_ru": "Дополнительные траты", "rate": "0.00", "is_active": "true", "comment": "", "updated_at": ""},
+        ], columns=PRICE_EXPENSE_RATES_COLUMNS).to_csv(PRICE_EXPENSE_RATES_FILE, index=False)
+
+    if not PRICE_MARGINS_FILE.exists():
+        rows = []
+        default_divisors = {
+            "1.00-1.49": "1",
+            "1.50-1.99": "1.5",
+            "2.00-2.49": "2",
+            "2.50-2.99": "2.5",
+            "3.00-3.99": "3",
+            "4.00-4.99": "4",
+            "5.00+": "5",
+        }
+        default_numerators = {
+            "start": "50",
+            "working": "70",
+            "public": "60",
+        }
+        for margin_type in ["start", "working", "public"]:
+            for weight_id, _label in WEIGHT_RANGES:
+                rows.append({
+                    "margin_type": margin_type,
+                    "weight_range_id": weight_id,
+                    "numerator": default_numerators[margin_type],
+                    "divisor": default_divisors.get(weight_id, "1"),
+                    "comment": "",
+                    "updated_at": "",
+                })
+        pd.DataFrame(rows, columns=PRICE_MARGINS_COLUMNS).to_csv(PRICE_MARGINS_FILE, index=False)
+
+    if not PRICE_SCORE_COEFFICIENTS_FILE.exists():
+        pd.DataFrame([
+            {"score_key": "poor", "score_name_ru": "Низкое качество", "coefficient": "0.90", "sort_order": "1", "comment": "", "updated_at": ""},
+            {"score_key": "fair", "score_name_ru": "Среднее качество", "coefficient": "0.95", "sort_order": "2", "comment": "", "updated_at": ""},
+            {"score_key": "standard", "score_name_ru": "Стандартный", "coefficient": "1.00", "sort_order": "3", "comment": "", "updated_at": ""},
+            {"score_key": "high", "score_name_ru": "Высокое качество", "coefficient": "1.05", "sort_order": "4", "comment": "", "updated_at": ""},
+            {"score_key": "premium", "score_name_ru": "Премиальный", "coefficient": "1.10", "sort_order": "5", "comment": "", "updated_at": ""},
+            {"score_key": "elite", "score_name_ru": "Элитный", "coefficient": "1.15", "sort_order": "6", "comment": "", "updated_at": ""},
+            {"score_key": "not_calculated", "score_name_ru": "Не рассчитано", "coefficient": "1.00", "sort_order": "7", "comment": "", "updated_at": ""},
+        ], columns=PRICE_SCORE_COEFFICIENTS_COLUMNS).to_csv(PRICE_SCORE_COEFFICIENTS_FILE, index=False)
+
+    if not CURRENCY_RATES_FILE.exists():
+        pd.DataFrame([
+            {"rate_key": "USD_RUB", "rate_name_ru": "Курс доллар / рубль", "rate_value": "", "updated_at": "", "comment": ""},
+            {"rate_key": "INR_RUB", "rate_name_ru": "Курс рупия / рубль", "rate_value": "", "updated_at": "", "comment": ""},
+            {"rate_key": "USD_INR", "rate_name_ru": "Курс доллар / рупия", "rate_value": "", "updated_at": "", "comment": ""},
+        ], columns=CURRENCY_RATES_COLUMNS).to_csv(CURRENCY_RATES_FILE, index=False)
+
+
+def read_price_supplier() -> pd.DataFrame:
+    ensure_price_files()
+    return read_csv_safe(PRICE_SUPPLIER_FILE, PRICE_SUPPLIER_COLUMNS)
+
+
+def read_price_expense_rates() -> pd.DataFrame:
+    ensure_price_files()
+    return read_csv_safe(PRICE_EXPENSE_RATES_FILE, PRICE_EXPENSE_RATES_COLUMNS)
+
+
+def read_price_margins() -> pd.DataFrame:
+    ensure_price_files()
+    return read_csv_safe(PRICE_MARGINS_FILE, PRICE_MARGINS_COLUMNS)
+
+
+def read_price_score_coefficients() -> pd.DataFrame:
+    ensure_price_files()
+    return read_csv_safe(PRICE_SCORE_COEFFICIENTS_FILE, PRICE_SCORE_COEFFICIENTS_COLUMNS)
+
+
+def read_currency_rates() -> pd.DataFrame:
+    ensure_price_files()
+    return read_csv_safe(CURRENCY_RATES_FILE, CURRENCY_RATES_COLUMNS)
+
+
+def _prepare_price_df(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    out = df.copy().fillna("")
+    for col in columns:
+        if col not in out.columns:
+            out[col] = ""
+    out["updated_at"] = _now_iso() if "updated_at" in out.columns else ""
+    return out[columns]
+
+
+def update_price_supplier(df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_price_supplier")
+    atomic_write_csv(_prepare_price_df(df, PRICE_SUPPLIER_COLUMNS), PRICE_SUPPLIER_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+def update_price_expense_rates(df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_price_expenses")
+    out = _prepare_price_df(df, PRICE_EXPENSE_RATES_COLUMNS)
+    out["is_active"] = out["is_active"].astype(str).str.lower().map(
+        lambda x: "true" if x in {"true", "1", "yes", "да", "истина"} else "false"
+    )
+    atomic_write_csv(out, PRICE_EXPENSE_RATES_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+def update_price_margins(df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_price_margins")
+    atomic_write_csv(_prepare_price_df(df, PRICE_MARGINS_COLUMNS), PRICE_MARGINS_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+def update_price_score_coefficients(df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_price_score_coefficients")
+    atomic_write_csv(_prepare_price_df(df, PRICE_SCORE_COEFFICIENTS_COLUMNS), PRICE_SCORE_COEFFICIENTS_FILE)
+    return {"updated": True, "backup_dir": str(backup_dir)}
+
+
+def update_currency_rates(df: pd.DataFrame) -> dict:
+    ensure_data_files()
+    backup_dir = backup_existing_files("before_update_currency_rates")
+    atomic_write_csv(_prepare_price_df(df, CURRENCY_RATES_COLUMNS), CURRENCY_RATES_FILE)
     return {"updated": True, "backup_dir": str(backup_dir)}

@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -464,7 +464,7 @@ def conflict_resolution_ui(preview):
     st.session_state["conflict_actions"] = actions
 
 
-page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Разделы", "Журнал импорта", "Правила"])
+page = st.sidebar.radio("Раздел", ["Загрузка поставки", "Поставки", "Камни", "Разделы", "Цены", "Журнал импорта", "Правила"])
 
 if page == "Загрузка поставки":
     st.title("Загрузка поставки")
@@ -797,6 +797,144 @@ elif page == "Разделы":
     st.write("Крупные камни: от 3.00 ct включительно и выше.")
 
 
+
+elif page == "Цены":
+    st.title("Цены")
+    st.caption("Этап 6A: настройки цен. Здесь только ввод и сохранение исходных таблиц, без финального расчёта по камням.")
+
+    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Полный расчёт, Index и просмотр маржи будут в следующих подэтапах.")
+
+    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates = st.tabs([
+        "Цена поставщика",
+        "Расходы",
+        "Маржи",
+        "KURGIN Score",
+        "Курсы валют",
+    ])
+
+    with tab_supplier:
+        st.subheader("Цена поставщика за карат")
+        st.caption("Вводится вручную по диапазону веса, цвету и чистоте. Цвета: D/E/F/G. Чистоты: IF/VVS1/VVS2/VS1/VS2.")
+        supplier_df = read_price_supplier()
+        supplier_edit = st.data_editor(
+            supplier_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["weight_range_id", "color", "clarity", "updated_at"],
+            column_config={
+                "weight_range_id": st.column_config.TextColumn("Диапазон веса"),
+                "color": st.column_config.TextColumn("Цвет"),
+                "clarity": st.column_config.TextColumn("Чистота"),
+                "supplier_price_per_ct_usd": st.column_config.NumberColumn("Цена поставщика USD/ct", min_value=0.0, step=1.0),
+                "comment": st.column_config.TextColumn("Комментарий"),
+                "updated_at": st.column_config.TextColumn("Обновлено"),
+            },
+            key="price_supplier_editor",
+        )
+        if st.button("Сохранить цены поставщика", type="primary"):
+            result = update_price_supplier(supplier_edit)
+            st.success("Цены поставщика сохранены")
+            st.caption(f"Backup: {result['backup_dir']}")
+
+    with tab_expenses:
+        st.subheader("Коэффициенты расходов")
+        st.caption("Внутренняя цена = цена поставщика × (1 + сумма активных коэффициентов). Например 0.37 = 37%.")
+        expenses_df = read_price_expense_rates()
+        expenses_df["is_active"] = expenses_df["is_active"].astype(str).str.lower().map(lambda x: x in {"true", "1", "yes", "да", "истина"})
+        expenses_edit = st.data_editor(
+            expenses_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["expense_key", "updated_at"],
+            column_config={
+                "expense_key": st.column_config.TextColumn("Ключ"),
+                "expense_name_ru": st.column_config.TextColumn("Название"),
+                "rate": st.column_config.NumberColumn("Коэффициент", min_value=0.0, step=0.01, format="%.4f"),
+                "is_active": st.column_config.CheckboxColumn("Активно"),
+                "comment": st.column_config.TextColumn("Комментарий"),
+                "updated_at": st.column_config.TextColumn("Обновлено"),
+            },
+            key="price_expenses_editor",
+        )
+        if st.button("Сохранить расходы", type="primary"):
+            to_save = expenses_edit.copy()
+            to_save["is_active"] = to_save["is_active"].map(lambda x: "true" if bool(x) else "false")
+            result = update_price_expense_rates(to_save)
+            st.success("Коэффициенты расходов сохранены")
+            st.caption(f"Backup: {result['backup_dir']}")
+
+    with tab_margins:
+        st.subheader("Маржи по диапазонам веса")
+        st.caption("Маржа за карат = числитель / делитель. Типы: start = стартовая, working = рабочая, public = публичная.")
+        margins_df = read_price_margins()
+        margins_edit = st.data_editor(
+            margins_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["margin_type", "weight_range_id", "updated_at"],
+            column_config={
+                "margin_type": st.column_config.TextColumn("Тип маржи"),
+                "weight_range_id": st.column_config.TextColumn("Диапазон веса"),
+                "numerator": st.column_config.NumberColumn("Числитель", min_value=0.0, step=1.0),
+                "divisor": st.column_config.NumberColumn("Делитель", min_value=0.01, step=0.1),
+                "comment": st.column_config.TextColumn("Комментарий"),
+                "updated_at": st.column_config.TextColumn("Обновлено"),
+            },
+            key="price_margins_editor",
+        )
+        if st.button("Сохранить маржи", type="primary"):
+            result = update_price_margins(margins_edit)
+            st.success("Маржи сохранены")
+            st.caption(f"Backup: {result['backup_dir']}")
+
+    with tab_score:
+        st.subheader("Коэффициенты KURGIN Score")
+        st.caption("Коэффициент применяется к стартовой, рабочей, публичной и индексной цене. Для не ROUND — 1.00.")
+        score_df = read_price_score_coefficients()
+        score_edit = st.data_editor(
+            score_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["score_key", "updated_at"],
+            column_config={
+                "score_key": st.column_config.TextColumn("Ключ"),
+                "score_name_ru": st.column_config.TextColumn("Название"),
+                "coefficient": st.column_config.NumberColumn("Коэффициент", min_value=0.0, step=0.01, format="%.4f"),
+                "sort_order": st.column_config.NumberColumn("Порядок", min_value=1, step=1),
+                "comment": st.column_config.TextColumn("Комментарий"),
+                "updated_at": st.column_config.TextColumn("Обновлено"),
+            },
+            key="price_score_editor",
+        )
+        if st.button("Сохранить коэффициенты KURGIN Score", type="primary"):
+            result = update_price_score_coefficients(score_edit)
+            st.success("Коэффициенты KURGIN Score сохранены")
+            st.caption(f"Backup: {result['backup_dir']}")
+
+    with tab_rates:
+        st.subheader("Курсы валют")
+        st.caption("Курсы вводятся вручную. Они не пересчитывают цены автоматически без отдельного подтверждения на будущих этапах.")
+        rates_df = read_currency_rates()
+        rates_edit = st.data_editor(
+            rates_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["rate_key", "updated_at"],
+            column_config={
+                "rate_key": st.column_config.TextColumn("Ключ"),
+                "rate_name_ru": st.column_config.TextColumn("Название"),
+                "rate_value": st.column_config.NumberColumn("Курс", min_value=0.0, step=0.01, format="%.4f"),
+                "comment": st.column_config.TextColumn("Комментарий"),
+                "updated_at": st.column_config.TextColumn("Обновлено"),
+            },
+            key="currency_rates_editor",
+        )
+        if st.button("Сохранить курсы валют", type="primary"):
+            result = update_currency_rates(rates_edit)
+            st.success("Курсы валют сохранены")
+            st.caption(f"Backup: {result['backup_dir']}")
+
+
 elif page == "Журнал импорта":
     st.title("Журнал импорта")
     log = read_import_log()
@@ -810,4 +948,4 @@ elif page == "Журнал импорта":
 
 elif page == "Правила":
     st.title("Правила")
-    st.info("Этап 5: Разделы каталога. Изменения правил принимаются только после обсуждения.")
+    st.info("Этап 6A: Настройки цен. Изменения правил принимаются только после обсуждения.")

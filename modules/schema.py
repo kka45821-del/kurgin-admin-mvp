@@ -95,3 +95,61 @@ CATALOG_SECTIONS_COLUMNS = [
     "sort_order",
     "comment",
 ]
+
+
+PRICE_SUPPLIER_COLUMNS = [
+    "weight_range_id",
+    "color",
+    "clarity",
+    "supplier_price_per_ct_usd",
+    "comment",
+    "updated_at",
+]
+
+PRICE_EXPENSE_RATES_COLUMNS = [
+    "expense_key",
+    "expense_name_ru",
+    "rate",
+    "is_active",
+    "comment",
+    "updated_at",
+]
+
+PRICE_MARGINS_COLUMNS = [
+    "margin_type",
+    "weight_range_id",
+    "numerator",
+    "divisor",
+    "comment",
+    "updated_at",
+]
+
+PRICE_SCORE_COEFFICIENTS_COLUMNS = [
+    "score_key",
+    "score_name_ru",
+    "coefficient",
+    "sort_order",
+    "comment",
+    "updated_at",
+]
+
+CURRENCY_RATES_COLUMNS = [
+    "rate_key",
+    "rate_name_ru",
+    "rate_value",
+    "updated_at",
+    "comment",
+]
+
+WEIGHT_RANGES = [
+    ("1.00-1.49", "1.00–1.49 ct"),
+    ("1.50-1.99", "1.50–1.99 ct"),
+    ("2.00-2.49", "2.00–2.49 ct"),
+    ("2.50-2.99", "2.50–2.99 ct"),
+    ("3.00-3.99", "3.00–3.99 ct"),
+    ("4.00-4.99", "4.00–4.99 ct"),
+    ("5.00+", "5.00+ ct"),
+]
+
+PRICE_COLORS = ["D", "E", "F", "G"]
+PRICE_CLARITIES = ["IF", "VVS1", "VVS2", "VS1", "VS2"]
