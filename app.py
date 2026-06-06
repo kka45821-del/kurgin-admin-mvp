@@ -800,23 +800,41 @@ elif page == "Разделы":
 
 elif page == "Цены":
     st.title("Цены")
-    st.caption("Этап 6A/6B/6C: настройки цен, расчёт корневых цен и индексная таблица. Пока без итоговых цен по камням, просмотра маржи и публикации.")
+    st.caption("Этап 6: цепочка цен за карат и Index. Пока без итоговых цен по камням, просмотра маржи и публикации.")
 
-    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Расчёт корневых цен доступен во вкладке “Расчёт USD”. Индексная таблица доступна во вкладке “Index”. Просмотр маржи будет в следующем подэтапе.")
+    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Цены разложены по цепочке: поставщик → расходы → внутренняя цена → маржа 1 → стартовая цена → маржа 2 → рабочая цена → маржа 3 → публичная цена → Index.")
 
-    tab_supplier, tab_expenses, tab_margins, tab_score, tab_rates, tab_root, tab_index = st.tabs([
-        "Цена поставщика",
+    (
+        tab_supplier,
+        tab_expenses,
+        tab_internal,
+        tab_margin1,
+        tab_start,
+        tab_margin2,
+        tab_working,
+        tab_margin3,
+        tab_public,
+        tab_score,
+        tab_rates,
+        tab_index,
+    ) = st.tabs([
+        "Цена поставщика за карат",
         "Расходы",
-        "Маржи",
+        "Внутренняя цена за карат",
+        "Маржа 1",
+        "Стартовая цена за карат",
+        "Маржа 2",
+        "Рабочая цена за карат",
+        "Маржа 3",
+        "Публичная цена за карат",
         "KURGIN Score",
         "Курсы валют",
-        "Расчёт USD",
         "Index",
     ])
 
     with tab_supplier:
         st.subheader("Цена поставщика за карат")
-        st.caption("Удобный ввод матрицей: отдельный блок по каждому цвету, строки = чистота, колонки = диапазоны веса.")
+        st.caption("Удобный ввод матрицей: отдельный блок по каждому цвету, строки = чистота, колонки = диапазоны веса: 1 / 1.5 / 2 / 2.5 / 3 / 4 / 5+.")
 
         supplier_df = read_price_supplier()
 
@@ -926,52 +944,61 @@ elif page == "Цены":
             st.success("Коэффициенты расходов сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
 
-    with tab_margins:
-        st.subheader("Маржи по диапазонам веса")
-        st.caption("Маржа за карат = числитель / делитель.")
-
+    with tab_internal:
+        st.subheader("Внутренняя цена за карат")
         st.markdown("""
-**Маржа 1 — для стартовой цены**
-
 ```text
-Стартовая цена = Внутренняя цена + Маржа 1
-```
-
-**Маржа 2 — для рабочей цены**
-
-```text
-Рабочая цена = Стартовая цена + Маржа 2
-```
-
-**Маржа 3 — для публичной цены**
-
-```text
-Публичная цена = Рабочая цена + Маржа 3
+Внутренняя цена за карат =
+Цена поставщика за карат × (1 + активные расходы)
 ```
 """)
+        st.caption("Удобная таблица по диапазонам веса: 1 / 1.5 / 2 / 2.5 / 3 / 4 / 5+. Если цена поставщика пустая или 0, цена не рассчитывается.")
 
-        margin_type_names = {
-            "start": "Маржа 1 — стартовая",
-            "working": "Маржа 2 — рабочая",
-            "public": "Маржа 3 — публичная",
-        }
+        root_df = calculate_root_price_table()
+
+        with st.expander("Внутренняя цена по цветам", expanded=True):
+            for color in ["D", "E", "F", "G"]:
+                with st.expander(f"Цвет {color}", expanded=(color == "D")):
+                    matrix = root_price_matrix_by_color(root_df, "internal_price_per_ct_usd", color)
+                    st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
+
+        with st.expander("Полная таблица внутренней цены", expanded=False):
+            full = root_df[
+                [
+                    "weight_range_id",
+                    "color",
+                    "clarity",
+                    "supplier_price_per_ct_usd",
+                    "internal_price_per_ct_usd",
+                    "total_expense_rate",
+                    "calculation_status",
+                ]
+            ].copy()
+            st.dataframe(full, use_container_width=True, hide_index=True, height=420)
+
+
+    def margin_editor_block(margin_type: str, title: str, formula_text: str, editor_key: str, button_label: str):
+        st.subheader(title)
+        st.caption("Маржа за карат = числитель / делитель. Значения числителя и делителя можно менять.")
+
+        st.markdown(formula_text)
 
         margins_df = read_price_margins()
-        margins_df["margin_name_ru"] = margins_df["margin_type"].astype(str).map(margin_type_names).fillna(margins_df["margin_type"])
-        margins_df["formula"] = margins_df.apply(
+        margin_df = margins_df[margins_df["margin_type"].astype(str) == margin_type].copy()
+
+        margin_df["formula"] = margin_df.apply(
             lambda r: f"{r.get('numerator', '')} / {r.get('divisor', '')} = "
             f"{round(float(str(r.get('numerator', '0')).replace(',', '.') or 0) / (float(str(r.get('divisor', '1')).replace(',', '.') or 1) or 1), 2)} USD/ct",
             axis=1,
         )
 
-        margins_edit = st.data_editor(
-            margins_df,
+        edited_margin = st.data_editor(
+            margin_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["margin_type", "margin_name_ru", "weight_range_id", "formula", "updated_at"],
+            disabled=["margin_type", "weight_range_id", "formula", "updated_at"],
             column_config={
                 "margin_type": st.column_config.TextColumn("Код"),
-                "margin_name_ru": st.column_config.TextColumn("Тип маржи"),
                 "weight_range_id": st.column_config.TextColumn("Диапазон веса"),
                 "numerator": st.column_config.NumberColumn("Числитель", min_value=0.0, step=1.0),
                 "divisor": st.column_config.NumberColumn("Делитель", min_value=0.01, step=0.1),
@@ -979,13 +1006,133 @@ elif page == "Цены":
                 "comment": st.column_config.TextColumn("Комментарий"),
                 "updated_at": st.column_config.TextColumn("Обновлено"),
             },
-            key="price_margins_editor",
+            key=editor_key,
         )
-        if st.button("Сохранить маржи", type="primary"):
-            to_save = margins_edit.drop(columns=["margin_name_ru", "formula"], errors="ignore")
+
+        if st.button(button_label, type="primary"):
+            full_margins = read_price_margins()
+            edited_clean = edited_margin.drop(columns=["formula"], errors="ignore").copy()
+            other = full_margins[full_margins["margin_type"].astype(str) != margin_type].copy()
+            to_save = pd.concat([other, edited_clean], ignore_index=True)
             result = update_price_margins(to_save)
-            st.success("Маржи сохранены")
+            st.success(f"{title} сохранена")
             st.caption(f"Backup: {result['backup_dir']}")
+
+
+    def calculated_price_tab(title: str, formula_text: str, price_column: str):
+        st.subheader(title)
+        st.markdown(formula_text)
+        st.caption("Удобная таблица по диапазонам веса: 1 / 1.5 / 2 / 2.5 / 3 / 4 / 5+. Если цена поставщика пустая или 0, цена не рассчитывается.")
+
+        root_df = calculate_root_price_table()
+
+        with st.expander(f"{title} по цветам", expanded=True):
+            for color in ["D", "E", "F", "G"]:
+                with st.expander(f"Цвет {color}", expanded=(color == "D")):
+                    matrix = root_price_matrix_by_color(root_df, price_column, color)
+                    st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
+
+        with st.expander(f"Полная таблица: {title}", expanded=False):
+            full = root_df[
+                [
+                    "weight_range_id",
+                    "color",
+                    "clarity",
+                    "supplier_price_per_ct_usd",
+                    "internal_price_per_ct_usd",
+                    "start_price_per_ct_usd",
+                    "working_price_per_ct_usd",
+                    "public_price_per_ct_usd",
+                    "total_expense_rate",
+                    "calculation_status",
+                ]
+            ].copy()
+            st.dataframe(full, use_container_width=True, hide_index=True, height=420)
+
+
+    with tab_margin1:
+        margin_editor_block(
+            "start",
+            "Маржа 1",
+            """
+```text
+Стартовая цена за карат =
+Внутренняя цена за карат + Маржа 1
+```
+""",
+            "margin1_editor",
+            "Сохранить Маржу 1",
+        )
+
+
+    with tab_start:
+        calculated_price_tab(
+            "Стартовая цена за карат",
+            """
+```text
+Стартовая цена за карат =
+Внутренняя цена за карат + Маржа 1
+```
+""",
+            "start_price_per_ct_usd",
+        )
+
+
+    with tab_margin2:
+        margin_editor_block(
+            "working",
+            "Маржа 2",
+            """
+```text
+Рабочая цена за карат =
+Стартовая цена за карат + Маржа 2
+```
+""",
+            "margin2_editor",
+            "Сохранить Маржу 2",
+        )
+
+
+    with tab_working:
+        calculated_price_tab(
+            "Рабочая цена за карат",
+            """
+```text
+Рабочая цена за карат =
+Стартовая цена за карат + Маржа 2
+```
+""",
+            "working_price_per_ct_usd",
+        )
+
+
+    with tab_margin3:
+        margin_editor_block(
+            "public",
+            "Маржа 3",
+            """
+```text
+Публичная цена за карат =
+Рабочая цена за карат + Маржа 3
+```
+""",
+            "margin3_editor",
+            "Сохранить Маржу 3",
+        )
+
+
+    with tab_public:
+        calculated_price_tab(
+            "Публичная цена за карат",
+            """
+```text
+Публичная цена за карат =
+Рабочая цена за карат + Маржа 3
+```
+""",
+            "public_price_per_ct_usd",
+        )
+
 
     with tab_score:
         st.subheader("Коэффициенты KURGIN Score")
@@ -1035,66 +1182,6 @@ elif page == "Цены":
             result = update_currency_rates(rates_edit)
             st.success("Курсы валют сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
-
-
-
-    with tab_root:
-        st.subheader("Расчёт корневых цен за карат, USD")
-        st.caption("6B: проверочный расчёт цепочки supplier → internal → start → working → public. Если цена поставщика пустая или 0, дальнейшие цены не рассчитываются.")
-
-        root_df = calculate_root_price_table()
-
-        c1, c2 = st.columns(2)
-        with c1:
-            price_type = st.selectbox(
-                "Какую цену показать матрицей",
-                [
-                    "Цена поставщика",
-                    "Внутренняя цена",
-                    "Стартовая цена",
-                    "Рабочая цена",
-                    "Публичная цена",
-                ],
-                index=4,
-            )
-        with c2:
-            st.metric("Строк расчёта", len(root_df))
-
-        price_column_map = {
-            "Цена поставщика": "supplier_price_per_ct_usd",
-            "Внутренняя цена": "internal_price_per_ct_usd",
-            "Стартовая цена": "start_price_per_ct_usd",
-            "Рабочая цена": "working_price_per_ct_usd",
-            "Публичная цена": "public_price_per_ct_usd",
-        }
-        selected_price_column = price_column_map[price_type]
-
-        with st.expander("Расчёт по цветам", expanded=True):
-            for color in ["D", "E", "F", "G"]:
-                with st.expander(f"Цвет {color}", expanded=(color == "D")):
-                    matrix = root_price_matrix_by_color(root_df, selected_price_column, color)
-                    st.dataframe(matrix, use_container_width=True, hide_index=True, height=230)
-
-        with st.expander("Полная таблица расчёта", expanded=False):
-            st.dataframe(
-                root_df[
-                    [
-                        "weight_range_id",
-                        "color",
-                        "clarity",
-                        "supplier_price_per_ct_usd",
-                        "internal_price_per_ct_usd",
-                        "start_price_per_ct_usd",
-                        "working_price_per_ct_usd",
-                        "public_price_per_ct_usd",
-                        "total_expense_rate",
-                        "calculation_status",
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True,
-                height=420,
-            )
 
 
 
