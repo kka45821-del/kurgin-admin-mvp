@@ -276,4 +276,284 @@ price_warning = Нет цены поставщика
 Числовые price-поля для таких камней должны быть пустыми.
 
 Основная запись цен не включает «Цена по запросу»: `allow_price_on_request = true` и `public_price_display = Цена по запросу` ставятся только отдельным массовым действием после предпросмотра, отдельного подтверждения и отдельного backup.
+## Checkpoint 25 — Stage 7C completed and locked
 
+Checkpoint 25 — стабильная точка после завершения Stage 7C.
+
+Правильный порядок следующих работ:
+
+```text
+1. Проверить, что 7C завершён и работает.
+2. Зафиксировать правила и ограничения после 7C.
+3. Сделать checkpoint ZIP по состоянию после 7C.
+4. Только потом обсуждать 7D.
+5. Сначала согласовать правила 7D.
+6. Только после этого делать ZIP с кодом 7D.
+```
+
+7C считается завершённым, если выполнено:
+
+```text
+7C работает в Streamlit
+перед записью создаётся backup
+запись цен в stones_master.csv требует ручного подтверждения
+ручные цены не перезаписываются молча
+камни без цены поставщика не получают числовую цену
+“Цена по запросу” не включается автоматически
+```
+
+Записываемые 7C price-поля:
+
+```text
+supplier_price_per_ct_usd
+internal_price_per_ct_usd
+start_price_per_ct_usd
+working_price_per_ct_usd
+public_price_per_ct_usd
+supplier_price_total_usd
+internal_price_total_usd
+start_price_total_usd
+working_price_total_usd
+public_price_total_usd
+supplier_price_total_rub
+internal_price_total_rub
+start_price_total_rub
+working_price_total_rub
+public_price_total_rub
+price_currency_base
+price_fx_usd_rub
+price_calculated_at
+price_status
+price_warning
+price_source
+public_price_display
+allow_price_on_request
+```
+
+Правила защиты после 7C:
+
+```text
+price_source = manual не перезаписывать без отдельного правила
+missing_supplier_price не получает числовую цену
+allow_price_on_request не включать основной записью цен
+“Цена по запросу” включать только отдельным подтверждением
+перед любым действием записи нужен backup
+preview должен быть актуальным
+runtime data не добавлять в кодовый commit
+```
+
+В следующих Changes не должно быть:
+
+```text
+data/
+backups/
+exports/
+__pycache__/
+tmp/
+current_working_code/
+тестовые файлы
+```
+
+Что ещё не сделано:
+
+```text
+публикация
+публичный слой каталога
+экспорт для сайта
+автоматический sync
+правила отбора камней для публичного отображения
+```
+
+7D пока не реализован. Перед 7D нужно отдельно согласовать правила публикации и публичного слоя:
+
+```text
+какие камни попадают в публичный слой
+какие камни исключаются
+как учитывать status
+как учитывать availability_status
+как учитывать catalog_section
+как учитывать скрытые разделы
+как учитывать allow_price_on_request
+как учитывать price_status и public_price_display
+что именно экспортируется наружу
+```
+
+Код 7D нельзя писать до подтверждения этих правил.
+
+
+## 7D.0 — Unified KURGIN Report / PDF / Assets foundation
+
+7D.0 — только документационный foundation. Код, PDF, exports, asset manager и изменения CSV-схемы в 7D.0 запрещены.
+
+Правильный порядок после checkpoint 25:
+
+```text
+1. Checkpoint 25 — Stage 7C completed / rules locked.
+2. 7D.0 — docs-only foundation для Unified Report / PDF / Assets.
+3. 7D — правила публичного слоя.
+4. 7E — preview/audit публичного слоя в Admin.
+5. 7F / 8A — export/public card schema.
+6. V1 release — без PDF generator.
+7. V2 — общий PDF generator.
+```
+
+### Единый PDF/report принцип
+
+Запрещено создавать независимые PDF-генераторы для:
+
+```text
+Admin
+private analyzer
+public stone analyzer
+mass analyzer
+catalog stone card
+```
+
+Разрешённая будущая архитектура:
+
+```text
+ReportPayloadV1
+↓
+ReportMode
+↓
+Visibility Policy
+↓
+Unified KURGIN Report / PDF generator
+↓
+PDF bytes/file + metadata
+```
+
+Существующая PDF/report-логика в analyzer считается prototype / candidate source. Она не должна становиться отдельным production generator для сайта и Admin.
+
+### ReportMode
+
+Канонические режимы:
+
+```text
+internal_admin
+private_analyzer
+public_stone_analyzer
+mass_analyzer_row
+catalog_stone_card
+```
+
+`catalog_stone_card` имеет два будущих уровня:
+
+```text
+summary_view
+detail_view
+```
+
+### Public catalog card summary
+
+Будущая карточка камня на сайте должна иметь минимальный public-safe набор:
+
+```text
+shape
+carat
+color
+clarity
+kurgin_score
+min_diameter
+max_diameter
+height
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+```
+
+Детальная карточка после клика может показывать:
+
+```text
+ту же карточку
+расширенные public-safe details
+KURGIN Analyzer Report PDF / report reference
+lab report reference
+фото / видео / future assets
+```
+
+Карточка камня не генерирует PDF. PDF generator не генерирует карточку. Оба будущих слоя используют общий `ReportPayloadV1` и visibility rules.
+
+### PDF generator — запреты
+
+Будущий generator не должен:
+
+```text
+считать цены
+менять stones_master.csv
+менять status
+менять availability_status
+менять catalog_section
+включать allow_price_on_request
+публиковать камень
+создавать заказ / резерв / покупку
+раскрывать внутреннюю формулу
+зависеть необратимо от Streamlit Cloud
+```
+
+### PDF generator — обязанности будущего V2
+
+Будущий generator должен:
+
+```text
+принимать готовый ReportPayloadV1
+применять visibility policy
+создавать PDF bytes/file
+возвращать report_id
+возвращать report_status
+возвращать template_version
+возвращать created_at
+быть переиспользуемым между Admin, Analyzer и сайтом
+```
+
+### V1 boundary
+
+В V1 фиксируются только правила и контракт:
+
+```text
+ReportPayloadV1
+ReportMode
+visibility rules
+Catalog Stone Card Contract
+future report_refs
+future asset_refs
+future stone_assets.csv concept
+```
+
+В V1 запрещено делать:
+
+```text
+PDF generation
+PDF viewer
+PDF upload
+active asset manager
+active stone_assets.csv
+automatic KURGIN Report creation
+public site PDF integration
+separate kurgin-report-core package
+```
+
+### V2 boundary
+
+На V2 остаётся:
+
+```text
+общий PDF generator
+kurgin-report-core или аналогичный общий пакет
+PDF bytes/file generation
+PDF viewer
+report storage lifecycle
+active stone_assets.csv
+asset manager
+lab report linking
+photos/videos/gallery
+интеграция отчёта в детальную карточку сайта
+```
+
+Подробный foundation-документ должен находиться в:
+
+```text
+docs/UNIFIED_KURGIN_REPORT_FOUNDATION_V1.md
+```

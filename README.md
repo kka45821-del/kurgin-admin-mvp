@@ -333,4 +333,153 @@ This package includes the safe existing-stone update fix from Stage 4.
 - если для рассчитанных камней не задан `USD_RUB`, запись блокируется;
 - камни без цены поставщика не получают числовые price-поля;
 - основная запись не включает “Цена по запросу”: `allow_price_on_request = true` и `public_price_display = Цена по запросу` ставятся только отдельной кнопкой с фразой `ВКЛЮЧИТЬ ПО ЗАПРОСУ` и отдельным backup.
+## Checkpoint 25 — Stage 7C completed and locked
 
+Checkpoint 25 фиксирует стабильное состояние после завершения Stage 7C.
+
+Порядок процесса после 7C:
+
+```text
+1. Сначала убедиться, что 7C реально завершён и проверен.
+2. Зафиксировать правила и ограничения после 7C.
+3. Сделать checkpoint ZIP по состоянию после 7C.
+4. Только потом обсуждать 7D.
+5. Сначала согласовать правила 7D.
+6. Только после этого делать ZIP с кодом 7D.
+```
+
+Фактическое состояние:
+
+```text
+7C работает
+код 7C находится в GitHub main
+commit: Stage 7C: add confirmed price write to stones_master
+Streamlit обновлён и проверен
+запись цен в stones_master.csv сработала
+backup перед записью создался
+GitHub Desktop после проверки был чистый
+```
+
+Правила после 7C:
+
+```text
+backup перед записью обязателен
+запись цен подтверждается вручную
+ручные цены не перезаписываются молча
+камни без цены поставщика не получают числовую цену
+“Цена по запросу” не включается автоматически
+allow_price_on_request включается только отдельным подтверждаемым действием
+устаревший preview не должен записываться
+```
+
+Итоговые price-поля, добавленные 7C в `stones_master.csv`:
+
+```text
+supplier_price_per_ct_usd
+internal_price_per_ct_usd
+start_price_per_ct_usd
+working_price_per_ct_usd
+public_price_per_ct_usd
+supplier_price_total_usd
+internal_price_total_usd
+start_price_total_usd
+working_price_total_usd
+public_price_total_usd
+supplier_price_total_rub
+internal_price_total_rub
+start_price_total_rub
+working_price_total_rub
+public_price_total_rub
+price_currency_base
+price_fx_usd_rub
+price_calculated_at
+price_status
+price_warning
+price_source
+public_price_display
+allow_price_on_request
+```
+
+Что ещё не сделано после 7C:
+
+```text
+публикация
+публичный слой каталога
+экспорт для сайта
+автоматический sync
+правила отбора камней для публичного отображения
+```
+
+Следующий этап 7D не реализован в этом checkpoint. До кода 7D нужно отдельно согласовать правила: что считается публикацией, какие камни попадают в публичный слой, какие исключаются, как учитывать `allow_price_on_request`, `status`, `availability_status`, `catalog_section`, скрытые разделы и price-поля.
+
+Предыдущий черновой ZIP 7D, выданный до фиксации checkpoint 25, считать неактуальным и не устанавливать.
+
+
+## 7D.0 — Unified KURGIN Report / PDF / Assets foundation
+
+7D.0 — документационный foundation после закрытого 7C. Нового кода, PDF-генерации, asset manager и изменений CSV-схемы в этом этапе нет.
+
+Цель 7D.0:
+
+```text
+заложить единый будущий контракт KURGIN Report / PDF / Assets,
+чтобы Admin, Analyzer, сайт, Mass Analyzer и будущая карточка камня не получили разные несовместимые PDF-генераторы.
+```
+
+Главный принцип:
+
+```text
+один общий ReportPayloadV1
+один будущий unified KURGIN Report / PDF generator
+несколько режимов ReportMode
+отдельные visibility rules для каждого режима
+```
+
+Режимы отчёта:
+
+```text
+internal_admin
+private_analyzer
+public_stone_analyzer
+mass_analyzer_row
+catalog_stone_card
+```
+
+PDF generator в будущем должен принимать готовый `ReportPayloadV1`, применять visibility policy и возвращать PDF + metadata. Он не должен считать цены, менять `stones_master.csv`, менять статусы, публиковать камень, создавать заказ/резерв/покупку, включать `allow_price_on_request`, раскрывать внутреннюю формулу или зависеть необратимо от Streamlit Cloud.
+
+Карточка камня на сайте в будущем должна иметь public-safe summary:
+
+```text
+shape
+carat
+color
+clarity
+kurgin_score
+min_diameter
+max_diameter
+height
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+```
+
+При клике детальная карточка сможет показывать эту же карточку, расширенные данные, будущий KURGIN Analyzer Report PDF, lab report, фото/видео/assets. В 7D.0 это только контракт на будущее, не реализация.
+
+V1 граница:
+
+```text
+PDF generator не реализуется
+PDF viewer не реализуется
+asset manager не реализуется
+stone_assets.csv не активируется
+stones_master.csv не меняется
+экспорт/публикация на сайт не делаются
+```
+
+Подробный контракт зафиксирован в:
+
+```text
+docs/UNIFIED_KURGIN_REPORT_FOUNDATION_V1.md
+```
