@@ -1,3 +1,29 @@
+PRICE_WRITE_STONE_COLUMNS = [
+    "supplier_price_per_ct_usd",
+    "internal_price_per_ct_usd",
+    "start_price_per_ct_usd",
+    "working_price_per_ct_usd",
+    "public_price_per_ct_usd",
+    "supplier_price_total_usd",
+    "internal_price_total_usd",
+    "start_price_total_usd",
+    "working_price_total_usd",
+    "public_price_total_usd",
+    "supplier_price_total_rub",
+    "internal_price_total_rub",
+    "start_price_total_rub",
+    "working_price_total_rub",
+    "public_price_total_rub",
+    "price_currency_base",
+    "price_fx_usd_rub",
+    "price_calculated_at",
+    "price_status",
+    "price_warning",
+    "price_source",
+    "public_price_display",
+    "allow_price_on_request",
+]
+
 STONES_COLUMNS = [
     "stone_id",
     "kurgin_import_id",
@@ -37,6 +63,7 @@ STONES_COLUMNS = [
     "updated_at",
     "updated_import_id",
     "last_source_file",
+    *PRICE_WRITE_STONE_COLUMNS,
 ]
 
 SHIPMENTS_COLUMNS = [

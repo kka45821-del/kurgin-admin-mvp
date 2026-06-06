@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -1318,20 +1318,35 @@ elif page == "Цены":
 
 
     if price_page_selected == "Запись цен":
-        st.subheader("Предпросмотр записи цен")
-        st.caption("7B: безопасный предпросмотр. На этом этапе ничего не записывается в stones_master.csv.")
+        st.subheader("Запись итоговых цен")
+        st.caption("7C: предпросмотр → явное подтверждение → backup → запись в stones_master.csv.")
+
+        st.info(
+            "Правила записи: ручные цены не перезаписываются; перед записью создаётся backup; "
+            "камни без цены поставщика не получают числовую цену; “Цена по запросу” включается отдельным действием через allow_price_on_request."
+        )
 
         preview_currency = st.selectbox("Валюта предпросмотра", ["RUB", "USD", "INR"], index=0, key="price_write_preview_currency")
 
-        if st.button("Сформировать предпросмотр записи цен", type="primary"):
+        if st.button("Сформировать / обновить предпросмотр записи цен", type="primary"):
             st.session_state["price_write_preview"] = build_price_write_preview(preview_currency)
 
         preview_data = st.session_state.get("price_write_preview")
 
         if not preview_data:
-            st.info("Нажмите “Сформировать предпросмотр записи цен”. Данные не будут записаны.")
+            st.info("Нажмите “Сформировать / обновить предпросмотр записи цен”. Без предпросмотра запись недоступна.")
         else:
             summary = preview_data["summary"]
+            preview_fingerprint = preview_data.get("fingerprint", "")
+            preview_generated_at = preview_data.get("generated_at", "")
+            preview_fx_usd_rub = preview_data.get("fx_usd_rub", 0)
+            try:
+                preview_fx_usd_rub_num = float(preview_fx_usd_rub or 0)
+            except Exception:
+                preview_fx_usd_rub_num = 0
+
+            if preview_data.get("currency") != preview_currency:
+                st.warning("Валюта селектора изменена после формирования предпросмотра. Обновите предпросмотр перед подтверждением.")
 
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Камней всего", summary.get("total", 0))
@@ -1340,12 +1355,15 @@ elif page == "Цены":
             c4.metric("Ручные цены", summary.get("manual_prices", 0))
             c5.metric("Будут пропущены", summary.get("skipped", 0))
 
-            st.warning("7B — только предпросмотр. Запись цен в камни появится только на этапе 7C после отдельного подтверждения правил.")
+            st.caption(f"Предпросмотр сформирован: {preview_generated_at}. Контрольная подпись: {preview_fingerprint[:12]}.")
+
+            if summary.get("will_write", 0) and preview_fx_usd_rub_num <= 0:
+                st.error("Запись рассчитанных цен заблокирована: не задан курс USD_RUB для итоговых RUB-полей.")
 
             with st.expander("Камни, которым будут записаны цены", expanded=True):
                 df = preview_data["will_write_df"]
                 if df.empty:
-                    st.info("Нет камней для записи цен.")
+                    st.info("Нет камней для записи рассчитанных цен.")
                 else:
                     st.dataframe(df, use_container_width=True, hide_index=True, height=360)
 
@@ -1355,6 +1373,7 @@ elif page == "Цены":
                     st.success("Нет камней без цены поставщика.")
                 else:
                     st.dataframe(df, use_container_width=True, hide_index=True, height=360)
+                    st.caption("Для этих камней числовые price-поля будут очищены/оставлены пустыми. “Цена по запросу” и allow_price_on_request не включаются этим действием.")
 
             with st.expander("Камни с ручными ценами", expanded=False):
                 df = preview_data["manual_df"]
@@ -1362,8 +1381,89 @@ elif page == "Цены":
                     st.info("Ручных цен пока нет.")
                 else:
                     st.dataframe(df, use_container_width=True, hide_index=True, height=300)
+                    st.caption("Этап 7C не перезаписывает строки с price_source = manual.")
 
-            st.info("Цена по запросу пока не включается. Массовое разрешение allow_price_on_request будет отдельным подтверждаемым действием на следующем этапе.")
+            st.divider()
+            st.subheader("Подтверждение записи рассчитанных цен")
+            st.warning(
+                "Будут записаны только auto-calculated price-поля и служебные статусы. "
+                "Ручные цены останутся без изменений. Перед записью будет создан backup."
+            )
+
+            has_write_records = (summary.get("will_write", 0) + summary.get("missing_supplier_price", 0)) > 0
+            write_confirm_checkbox = st.checkbox(
+                "Подтверждаю запись после проверки предпросмотра; ручные цены не перезаписывать.",
+                key="price_write_confirm_checkbox",
+            )
+            write_confirm_text = st.text_input(
+                f"Для записи введите: {PRICE_WRITE_CONFIRMATION_TEXT}",
+                key="price_write_confirm_text",
+            )
+            write_ready = (
+                has_write_records
+                and write_confirm_checkbox
+                and write_confirm_text.strip() == PRICE_WRITE_CONFIRMATION_TEXT
+                and preview_fingerprint
+                and not (summary.get("will_write", 0) and preview_fx_usd_rub_num <= 0)
+                and preview_data.get("currency") == preview_currency
+            )
+
+            if st.button("Подтвердить и записать в stones_master.csv", disabled=not write_ready):
+                result = commit_price_write(
+                    preview_currency,
+                    expected_fingerprint=preview_fingerprint,
+                    confirmed=True,
+                )
+                if result.get("updated"):
+                    st.success(result.get("message", "Цены записаны."))
+                    st.write(f"Backup: `{result.get('backup_dir', '')}`")
+                    r1, r2, r3 = st.columns(3)
+                    r1.metric("Записано цен", result.get("prices_written", 0))
+                    r2.metric("Помечено без цены", result.get("missing_marked", 0))
+                    r3.metric("Ручных пропущено", result.get("manual_skipped", 0))
+                    st.session_state["price_write_preview"] = build_price_write_preview(preview_currency)
+                else:
+                    st.error(result.get("message", "Запись не выполнена."))
+
+            if not has_write_records:
+                st.info("Нет auto-calculated или missing строк для записи. Ручные цены остаются без изменений.")
+
+            st.divider()
+            st.subheader("Отдельно: “Цена по запросу”")
+            st.caption("Это отдельное массовое действие. Оно ставит allow_price_on_request = true только для камней без цены поставщика и не записывает числовые цены.")
+
+            if summary.get("missing_supplier_price", 0) <= 0:
+                st.success("Нет камней без цены поставщика для включения “Цена по запросу”.")
+            else:
+                with st.expander("Включить allow_price_on_request для камней без цены поставщика", expanded=False):
+                    st.warning("Действие требует отдельного подтверждения и создаёт отдельный backup.")
+                    por_confirm_checkbox = st.checkbox(
+                        "Подтверждаю включение allow_price_on_request только для строк из блока “Камни без рассчитанной цены”.",
+                        key="price_on_request_confirm_checkbox",
+                    )
+                    por_confirm_text = st.text_input(
+                        f"Для включения введите: {PRICE_ON_REQUEST_CONFIRMATION_TEXT}",
+                        key="price_on_request_confirm_text",
+                    )
+                    por_ready = (
+                        por_confirm_checkbox
+                        and por_confirm_text.strip() == PRICE_ON_REQUEST_CONFIRMATION_TEXT
+                        and preview_fingerprint
+                        and preview_data.get("currency") == preview_currency
+                    )
+                    if st.button("Включить “Цена по запросу” для missing-камней", disabled=not por_ready):
+                        result = enable_price_on_request_for_missing(
+                            preview_currency,
+                            expected_fingerprint=preview_fingerprint,
+                            confirmed=True,
+                        )
+                        if result.get("updated"):
+                            st.success(result.get("message", "allow_price_on_request включён."))
+                            st.write(f"Backup: `{result.get('backup_dir', '')}`")
+                            st.metric("Включено", result.get("enabled", 0))
+                            st.session_state["price_write_preview"] = build_price_write_preview(preview_currency)
+                        else:
+                            st.error(result.get("message", "Действие не выполнено."))
 
 
 elif page == "Журнал импорта":

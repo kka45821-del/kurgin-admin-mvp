@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import hashlib
+import json
 import shutil
 import pandas as pd
 
 from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE, PRICE_SUPPLIER_FILE, PRICE_EXPENSE_RATES_FILE, PRICE_MARGINS_FILE, PRICE_SCORE_COEFFICIENTS_FILE, CURRENCY_RATES_FILE, CATALOG_SECTIONS_FILE
-from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS, PRICE_SUPPLIER_COLUMNS, PRICE_EXPENSE_RATES_COLUMNS, PRICE_MARGINS_COLUMNS, PRICE_SCORE_COEFFICIENTS_COLUMNS, CURRENCY_RATES_COLUMNS, WEIGHT_RANGES, PRICE_COLORS, PRICE_CLARITIES, CATALOG_SECTIONS_COLUMNS
+from .schema import STONES_COLUMNS, SHIPMENTS_COLUMNS, IMPORT_LOG_COLUMNS, PAYMENTS_COLUMNS, PRICE_SUPPLIER_COLUMNS, PRICE_EXPENSE_RATES_COLUMNS, PRICE_MARGINS_COLUMNS, PRICE_SCORE_COEFFICIENTS_COLUMNS, CURRENCY_RATES_COLUMNS, WEIGHT_RANGES, PRICE_COLORS, PRICE_CLARITIES, CATALOG_SECTIONS_COLUMNS, PRICE_WRITE_STONE_COLUMNS
 
 
 def now_stamp() -> str:
@@ -270,6 +272,7 @@ def update_existing_stones_from_import(update_df: pd.DataFrame, import_id: str, 
         "catalog_section",
         "admin_note",
         "price_comment",
+        *PRICE_WRITE_STONE_COLUMNS,
     }
 
     update_allowed = [
@@ -901,96 +904,331 @@ def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
 
 
 
-def build_price_write_preview(currency: str = "RUB") -> dict:
-    """7B: build a safe preview for future price write.
 
-    This function must not write to stones_master.csv.
+PRICE_NUMERIC_STONE_COLUMNS = [
+    "supplier_price_per_ct_usd",
+    "internal_price_per_ct_usd",
+    "start_price_per_ct_usd",
+    "working_price_per_ct_usd",
+    "public_price_per_ct_usd",
+    "supplier_price_total_usd",
+    "internal_price_total_usd",
+    "start_price_total_usd",
+    "working_price_total_usd",
+    "public_price_total_usd",
+    "supplier_price_total_rub",
+    "internal_price_total_rub",
+    "start_price_total_rub",
+    "working_price_total_rub",
+    "public_price_total_rub",
+]
 
-    Important: use the same status logic as calculate_stone_margin_view.
-    """
-    margin_view = calculate_stone_margin_view(currency)
-    stones = read_stones()
+PRICE_SERVICE_STONE_COLUMNS = [
+    "price_currency_base",
+    "price_fx_usd_rub",
+    "price_calculated_at",
+    "price_status",
+    "price_warning",
+    "price_source",
+    "public_price_display",
+    "allow_price_on_request",
+]
 
-    if margin_view.empty:
+PRICE_WRITE_CONFIRMATION_TEXT = "ЗАПИСАТЬ ЦЕНЫ"
+PRICE_ON_REQUEST_CONFIRMATION_TEXT = "ВКЛЮЧИТЬ ПО ЗАПРОСУ"
+
+
+def _bool_text(value, default: str = "false") -> str:
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "да", "истина"}:
+        return "true"
+    if text in {"false", "0", "no", "нет", "ложь", ""}:
+        return "false"
+    return default
+
+
+def _money_usd(value) -> str:
+    return f"{_float_value(value, 0.0):.2f}"
+
+
+def _money_rub(value) -> str:
+    return str(int(round(_float_value(value, 0.0))))
+
+
+def _currency_display_value(total_usd: float, currency: str):
+    currency = str(currency).upper().strip() or "RUB"
+    multiplier = _currency_multiplier(currency)
+    if currency != "USD" and multiplier <= 0:
+        return ""
+    return int(round(total_usd * multiplier))
+
+
+def _price_warning_for_missing(row: dict, price_row) -> str:
+    weight_range_id = _weight_range_for_weight(row.get("weight", ""))
+    if not weight_range_id:
+        return "Нет диапазона веса"
+    if price_row is None:
+        return "Нет цены поставщика"
+    status = str(price_row.get("calculation_status", ""))
+    if status != "Рассчитано":
+        return "Нет цены поставщика"
+    return "Нет рассчитанной цены"
+
+
+def _missing_public_price_display(allow_price_on_request: str) -> str:
+    return "Цена по запросу" if _bool_text(allow_price_on_request) == "true" else ""
+
+
+def _blank_price_fields(calculated_at: str, existing_allow_price_on_request: str = "false") -> dict:
+    allow_text = _bool_text(existing_allow_price_on_request)
+    fields = {col: "" for col in PRICE_NUMERIC_STONE_COLUMNS}
+    fields.update({
+        "price_currency_base": "USD",
+        "price_fx_usd_rub": "",
+        "price_calculated_at": calculated_at,
+        "price_status": "missing_supplier_price",
+        "price_warning": "Нет цены поставщика",
+        "price_source": "not_calculated",
+        "public_price_display": _missing_public_price_display(allow_text),
+        "allow_price_on_request": allow_text,
+    })
+    return fields
+
+
+def _is_manual_price_stone(stone: dict) -> bool:
+    price_source = str(stone.get("price_source", "")).strip().lower()
+    if price_source == "manual":
+        return True
+
+    # Legacy manual/admin price field from earlier stages.
+    # Do not silently replace it with auto-calculated public prices.
+    published_price = str(stone.get("published_price", "")).strip()
+    if published_price and price_source not in {"auto_calculated", "not_calculated"}:
+        return True
+
+    return False
+
+
+def _build_price_record(stone: dict, price_row: dict, score_lookup: dict, fx_usd_rub: float, calculated_at: str) -> dict:
+    weight = _float_value(stone.get("weight", ""), default=0.0)
+    score_key, warning = _score_key_from_stone(stone)
+    score_info = score_lookup.get(score_key, {"name": "Не рассчитано", "coefficient": 1.0})
+    score_coeff = _float_value(score_info.get("coefficient", 1.0), 1.0)
+
+    supplier_per_ct = _float_value(price_row.get("supplier_price_per_ct_usd", 0.0))
+    internal_per_ct = _float_value(price_row.get("internal_price_per_ct_usd", 0.0))
+    start_per_ct = _float_value(price_row.get("start_price_per_ct_usd", 0.0)) * score_coeff
+    working_per_ct = _float_value(price_row.get("working_price_per_ct_usd", 0.0)) * score_coeff
+    public_per_ct = _float_value(price_row.get("public_price_per_ct_usd", 0.0)) * score_coeff
+
+    supplier_total_usd = supplier_per_ct * weight
+    internal_total_usd = internal_per_ct * weight
+    start_total_usd = start_per_ct * weight
+    working_total_usd = working_per_ct * weight
+    public_total_usd = public_per_ct * weight
+
+    def rub_value(total_usd: float) -> str:
+        if fx_usd_rub <= 0:
+            return ""
+        return _money_rub(total_usd * fx_usd_rub)
+
+    fields = {
+        "supplier_price_per_ct_usd": _money_usd(supplier_per_ct),
+        "internal_price_per_ct_usd": _money_usd(internal_per_ct),
+        "start_price_per_ct_usd": _money_usd(start_per_ct),
+        "working_price_per_ct_usd": _money_usd(working_per_ct),
+        "public_price_per_ct_usd": _money_usd(public_per_ct),
+        "supplier_price_total_usd": _money_usd(supplier_total_usd),
+        "internal_price_total_usd": _money_usd(internal_total_usd),
+        "start_price_total_usd": _money_usd(start_total_usd),
+        "working_price_total_usd": _money_usd(working_total_usd),
+        "public_price_total_usd": _money_usd(public_total_usd),
+        "supplier_price_total_rub": rub_value(supplier_total_usd),
+        "internal_price_total_rub": rub_value(internal_total_usd),
+        "start_price_total_rub": rub_value(start_total_usd),
+        "working_price_total_rub": rub_value(working_total_usd),
+        "public_price_total_rub": rub_value(public_total_usd),
+        "price_currency_base": "USD",
+        "price_fx_usd_rub": f"{fx_usd_rub:.6f}" if fx_usd_rub > 0 else "",
+        "price_calculated_at": calculated_at,
+        "price_status": "calculated",
+        "price_warning": str(warning),
+        "price_source": "auto_calculated",
+        "public_price_display": rub_value(public_total_usd),
+        "allow_price_on_request": "false",
+    }
+
+    return {
+        "stone_id": str(stone.get("stone_id", "")),
+        "report_number": str(stone.get("report_number", "")),
+        "weight": weight if weight else "",
+        "color": str(stone.get("color", "")).upper().strip(),
+        "clarity": str(stone.get("clarity", "")).upper().strip(),
+        "score_key": score_key,
+        "score_coefficient": score_coeff,
+        "warning": str(warning),
+        "public_total_usd": public_total_usd,
+        "fields": fields,
+    }
+
+
+def _price_preview_fingerprint(writable_records: list[dict], missing_records: list[dict], manual_records: list[dict]) -> str:
+    def slim_writable(record: dict) -> dict:
+        fields = record.get("fields", {})
         return {
-            "summary": {
-                "total": 0,
-                "will_write": 0,
-                "missing_supplier_price": 0,
-                "manual_prices": 0,
-                "skipped": 0,
-                "price_on_request_possible": 0,
-            },
-            "will_write_df": pd.DataFrame(),
-            "missing_price_df": pd.DataFrame(),
-            "manual_df": pd.DataFrame(),
+            "stone_id": record.get("stone_id", ""),
+            "supplier_price_total_usd": fields.get("supplier_price_total_usd", ""),
+            "public_price_total_usd": fields.get("public_price_total_usd", ""),
+            "public_price_total_rub": fields.get("public_price_total_rub", ""),
+            "price_warning": fields.get("price_warning", ""),
+            "price_fx_usd_rub": fields.get("price_fx_usd_rub", ""),
         }
 
-    stone_source = {}
-    if not stones.empty and "stone_id" in stones.columns:
-        for _, row in stones.iterrows():
-            sid = str(row.get("stone_id", ""))
-            stone_source[sid] = {
-                "price_source": str(row.get("price_source", "")),
-                "shape": str(row.get("shape", "")),
-                "catalog_section": str(row.get("catalog_section", "")),
-                "allow_price_on_request": str(row.get("allow_price_on_request", "false")),
-                "current_public_price_total_rub": str(row.get("public_price_total_rub", "")),
-            }
+    def slim_missing(record: dict) -> dict:
+        fields = record.get("fields", {})
+        return {
+            "stone_id": record.get("stone_id", ""),
+            "price_status": fields.get("price_status", ""),
+            "price_warning": fields.get("price_warning", ""),
+            "allow_price_on_request": fields.get("allow_price_on_request", "false"),
+        }
+
+    payload = {
+        "writable": [slim_writable(r) for r in writable_records],
+        "missing": [slim_missing(r) for r in missing_records],
+        "manual": sorted([str(r.get("stone_id", "")) for r in manual_records]),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def build_price_write_preview(currency: str = "RUB") -> dict:
+    """7B/7C: build a safe preview for future price write.
+
+    The preview is read-only. It also contains a fingerprint used by 7C
+    to reject stale confirmations.
+    """
+    ensure_data_files()
+    display_currency = str(currency).upper().strip() or "RUB"
+    stones = read_stones()
+    root_df = calculate_root_price_table()
+    score_lookup = _score_coefficients_lookup()
+    fx_usd_rub = _currency_multiplier("RUB")
+    calculated_at = _now_iso()
+
+    empty_result = {
+        "summary": {
+            "total": 0,
+            "will_write": 0,
+            "missing_supplier_price": 0,
+            "manual_prices": 0,
+            "skipped": 0,
+            "price_on_request_possible": 0,
+        },
+        "will_write_df": pd.DataFrame(),
+        "missing_price_df": pd.DataFrame(),
+        "manual_df": pd.DataFrame(),
+        "writable_records": [],
+        "missing_records": [],
+        "manual_records": [],
+        "currency": display_currency,
+        "fx_usd_rub": fx_usd_rub,
+        "generated_at": calculated_at,
+        "fingerprint": _price_preview_fingerprint([], [], []),
+    }
+
+    if stones.empty:
+        return empty_result
+
+    root_lookup = {}
+    for _, row in root_df.iterrows():
+        key = (
+            str(row.get("weight_range_id", "")),
+            str(row.get("color", "")).upper().strip(),
+            str(row.get("clarity", "")).upper().strip(),
+        )
+        root_lookup[key] = row.to_dict()
 
     rows_write = []
     rows_missing = []
     rows_manual = []
+    writable_records = []
+    missing_records = []
+    manual_records = []
 
-    for _, row in margin_view.iterrows():
-        sid = str(row.get("ID", ""))
-        meta = stone_source.get(sid, {})
-        price_source_before = meta.get("price_source", "")
-        is_manual = price_source_before == "manual"
-        status = str(row.get("Статус расчёта", "")).strip()
-
-        public_price = row.get("Публичная цена за камень с KURGIN Score", "")
-        has_public_price = str(public_price).strip() not in {"", "None", "nan"}
+    for _, stone_row in stones.iterrows():
+        stone = stone_row.to_dict()
+        sid = str(stone.get("stone_id", ""))
+        price_source_before = str(stone.get("price_source", "")).strip().lower()
+        is_manual = _is_manual_price_stone(stone)
+        weight_range_id = _weight_range_for_weight(stone.get("weight", ""))
+        color = str(stone.get("color", "")).upper().strip()
+        clarity = str(stone.get("clarity", "")).upper().strip()
+        price_row = root_lookup.get((weight_range_id, color, clarity))
 
         if is_manual:
+            public_display = ""
+            if price_row and str(price_row.get("calculation_status", "")) == "Рассчитано":
+                record = _build_price_record(stone, price_row, score_lookup, fx_usd_rub, calculated_at)
+                public_display = _currency_display_value(record.get("public_total_usd", 0.0), display_currency)
+            manual_item = {
+                "stone_id": sid,
+                "report_number": str(stone.get("report_number", "")),
+            }
+            manual_records.append(manual_item)
             rows_manual.append({
                 "ID": sid,
-                "Report #": row.get("Report #", ""),
-                "Текущая цена": meta.get("current_public_price_total_rub", ""),
-                "Новая рассчитанная цена": public_price,
+                "Report #": stone.get("report_number", ""),
+                "Текущая цена RUB": stone.get("public_price_total_rub", "") or stone.get("published_price", ""),
+                f"Новая рассчитанная цена {display_currency}": public_display,
                 "Действие": "Не перезаписывать без отдельного подтверждения",
             })
             continue
 
-        # A stone is writable only if margin view says it is calculated
-        # and there is a public price value.
-        if status == "Рассчитано" and has_public_price:
-            rows_write.append({
+        if not price_row or str(price_row.get("calculation_status", "")) != "Рассчитано":
+            warning = _price_warning_for_missing(stone, price_row)
+            fields = _blank_price_fields(calculated_at, stone.get("allow_price_on_request", "false"))
+            fields["price_warning"] = warning if warning else "Нет цены поставщика"
+            missing_record = {
+                "stone_id": sid,
+                "report_number": str(stone.get("report_number", "")),
+                "fields": fields,
+            }
+            missing_records.append(missing_record)
+            rows_missing.append({
                 "ID": sid,
-                "Report #": row.get("Report #", ""),
-                "Вес": row.get("Вес", ""),
-                "Цвет": row.get("Цвет", ""),
-                "Чистота": row.get("Чистота", ""),
-                "Стартовая цена RUB": row.get("Стартовая цена за камень с KURGIN Score", ""),
-                "Рабочая цена RUB": row.get("Рабочая цена за камень с KURGIN Score", ""),
-                "Публичная цена RUB": public_price,
-                "price_source до": price_source_before or "",
-                "price_source после": "auto_calculated",
-                "Предупреждение": row.get("Предупреждение", ""),
+                "Report #": stone.get("report_number", ""),
+                "Вес": stone.get("weight", ""),
+                "Цвет": color,
+                "Чистота": clarity,
+                "Форма": stone.get("shape", ""),
+                "Раздел": stone.get("catalog_section", ""),
+                "Причина": fields.get("price_warning", "Нет цены поставщика"),
+                "Публичное отображение": fields.get("public_price_display", "") or "Не включено",
+                "allow_price_on_request сейчас": fields.get("allow_price_on_request", "false"),
+                "Числовые цены": "Не записывать",
             })
             continue
 
-        rows_missing.append({
+        record = _build_price_record(stone, price_row, score_lookup, fx_usd_rub, calculated_at)
+        writable_records.append(record)
+        display_price = _currency_display_value(record.get("public_total_usd", 0.0), display_currency)
+        start_display = _currency_display_value(_float_value(record["fields"].get("start_price_total_usd", 0.0)), display_currency)
+        working_display = _currency_display_value(_float_value(record["fields"].get("working_price_total_usd", 0.0)), display_currency)
+        rows_write.append({
             "ID": sid,
-            "Report #": row.get("Report #", ""),
-            "Вес": row.get("Вес", ""),
-            "Цвет": row.get("Цвет", ""),
-            "Чистота": row.get("Чистота", ""),
-            "Форма": meta.get("shape", ""),
-            "Раздел": meta.get("catalog_section", ""),
-            "Причина": status or "Нет цены поставщика",
-            "Публичное отображение": "Цена по запросу",
-            "Показывать “Цена по запросу”": meta.get("allow_price_on_request", "false"),
+            "Report #": stone.get("report_number", ""),
+            "Вес": stone.get("weight", ""),
+            "Цвет": color,
+            "Чистота": clarity,
+            f"Стартовая цена {display_currency}": start_display,
+            f"Рабочая цена {display_currency}": working_display,
+            f"Публичная цена {display_currency}": display_price,
+            "public_price_total_usd": record["fields"].get("public_price_total_usd", ""),
+            "public_price_total_rub": record["fields"].get("public_price_total_rub", ""),
+            "price_source до": price_source_before or "",
+            "price_source после": "auto_calculated",
+            "Предупреждение": record.get("warning", ""),
         })
 
     will_write_df = pd.DataFrame(rows_write)
@@ -998,7 +1236,7 @@ def build_price_write_preview(currency: str = "RUB") -> dict:
     manual_df = pd.DataFrame(rows_manual)
 
     summary = {
-        "total": int(len(margin_view)),
+        "total": int(len(stones)),
         "will_write": int(len(will_write_df)),
         "missing_supplier_price": int(len(missing_price_df)),
         "manual_prices": int(len(manual_df)),
@@ -1011,5 +1249,136 @@ def build_price_write_preview(currency: str = "RUB") -> dict:
         "will_write_df": will_write_df,
         "missing_price_df": missing_price_df,
         "manual_df": manual_df,
+        "writable_records": writable_records,
+        "missing_records": missing_records,
+        "manual_records": manual_records,
+        "currency": display_currency,
+        "fx_usd_rub": fx_usd_rub,
+        "generated_at": calculated_at,
+        "fingerprint": _price_preview_fingerprint(writable_records, missing_records, manual_records),
     }
 
+
+def _ensure_price_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().fillna("")
+    for col in PRICE_WRITE_STONE_COLUMNS:
+        if col not in out.columns:
+            out[col] = ""
+    return out
+
+
+def _apply_price_records(stones: pd.DataFrame, records: list[dict]) -> pd.DataFrame:
+    out = _ensure_price_columns(stones)
+    for record in records:
+        sid = str(record.get("stone_id", ""))
+        if not sid:
+            continue
+        mask = out["stone_id"].astype(str) == sid
+        if not mask.any():
+            continue
+        fields = record.get("fields", {})
+        for col in PRICE_WRITE_STONE_COLUMNS:
+            if col in fields:
+                out.loc[mask, col] = fields.get(col, "")
+        if "updated_at" in out.columns:
+            out.loc[mask, "updated_at"] = _now_iso()
+    return out
+
+
+def commit_price_write(currency: str = "RUB", expected_fingerprint: str = "", confirmed: bool = False) -> dict:
+    """7C: write calculated price fields into stones_master.csv after preview confirmation.
+
+    Manual prices are never overwritten by this function.
+    Stones without supplier price get no numeric prices; they receive only status metadata.
+    """
+    ensure_data_files()
+    if not confirmed:
+        return {"updated": False, "message": "Запись отменена: нет явного подтверждения."}
+
+    preview = build_price_write_preview(currency)
+    current_fingerprint = preview.get("fingerprint", "")
+    if not expected_fingerprint or expected_fingerprint != current_fingerprint:
+        return {
+            "updated": False,
+            "message": "Запись отменена: предпросмотр устарел. Сформируйте предпросмотр заново.",
+            "current_fingerprint": current_fingerprint,
+        }
+
+    writable_records = preview.get("writable_records", [])
+    missing_records = preview.get("missing_records", [])
+    manual_records = preview.get("manual_records", [])
+
+    if writable_records and _currency_multiplier("RUB") <= 0:
+        return {"updated": False, "message": "Запись отменена: не задан курс USD_RUB для итоговых RUB-полей."}
+
+    records_to_apply = list(writable_records) + list(missing_records)
+    if not records_to_apply:
+        return {
+            "updated": False,
+            "message": "Нет строк для записи. Ручные цены не изменены.",
+            "prices_written": 0,
+            "missing_marked": 0,
+            "manual_skipped": len(manual_records),
+        }
+
+    backup_dir = backup_existing_files("before_price_write_7c")
+    stones = read_stones()
+    stones = _apply_price_records(stones, records_to_apply)
+    atomic_write_csv(stones, STONES_FILE)
+
+    return {
+        "updated": True,
+        "message": "Цены записаны в stones_master.csv.",
+        "backup_dir": str(backup_dir),
+        "prices_written": int(len(writable_records)),
+        "missing_marked": int(len(missing_records)),
+        "manual_skipped": int(len(manual_records)),
+    }
+
+
+def enable_price_on_request_for_missing(currency: str = "RUB", expected_fingerprint: str = "", confirmed: bool = False) -> dict:
+    """Separately enable allow_price_on_request=true for currently missing supplier prices.
+
+    This is intentionally not part of commit_price_write, because price-on-request
+    must be enabled through a separate preview and confirmation path.
+    """
+    ensure_data_files()
+    if not confirmed:
+        return {"updated": False, "message": "Действие отменено: нет явного подтверждения."}
+
+    preview = build_price_write_preview(currency)
+    current_fingerprint = preview.get("fingerprint", "")
+    if not expected_fingerprint or expected_fingerprint != current_fingerprint:
+        return {
+            "updated": False,
+            "message": "Действие отменено: предпросмотр устарел. Сформируйте предпросмотр заново.",
+            "current_fingerprint": current_fingerprint,
+        }
+
+    missing_records = preview.get("missing_records", [])
+    if not missing_records:
+        return {"updated": False, "message": "Нет камней без цены поставщика для включения “Цена по запросу”.", "enabled": 0}
+
+    records = []
+    for record in missing_records:
+        fields = dict(record.get("fields", {}))
+        for col in PRICE_NUMERIC_STONE_COLUMNS:
+            fields[col] = ""
+        fields["allow_price_on_request"] = "true"
+        fields["public_price_display"] = "Цена по запросу"
+        fields["price_source"] = "not_calculated"
+        fields["price_status"] = "missing_supplier_price"
+        fields["price_warning"] = fields.get("price_warning", "") or "Нет цены поставщика"
+        records.append({**record, "fields": fields})
+
+    backup_dir = backup_existing_files("before_enable_price_on_request_7c")
+    stones = read_stones()
+    stones = _apply_price_records(stones, records)
+    atomic_write_csv(stones, STONES_FILE)
+
+    return {
+        "updated": True,
+        "message": "allow_price_on_request включён для камней без цены поставщика.",
+        "backup_dir": str(backup_dir),
+        "enabled": int(len(records)),
+    }
