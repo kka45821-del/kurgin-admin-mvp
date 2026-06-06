@@ -1284,15 +1284,20 @@ elif page == "Цены":
         if margin_df.empty:
             st.info("Камней пока нет.")
         else:
-            f1, f2, f3, f4 = st.columns(4)
+            st.markdown("**Быстрый поиск камня**")
+            search_margin = st.text_input(
+                "Поиск по ID / Report # / Stock #",
+                placeholder="Например: KRG-LG790659323 или LG790659323 или 62523",
+                key="margin_view_search",
+            )
+
+            f1, f2, f3 = st.columns(3)
             with f1:
                 status_filter = st.selectbox("Статус расчёта", ["Все"] + sorted(margin_df["Статус расчёта"].dropna().astype(str).unique().tolist()))
             with f2:
                 color_filter = st.selectbox("Цвет", ["Все"] + sorted([x for x in margin_df["Цвет"].dropna().astype(str).unique().tolist() if x]))
             with f3:
                 clarity_filter = st.selectbox("Чистота", ["Все"] + sorted([x for x in margin_df["Чистота"].dropna().astype(str).unique().tolist() if x]))
-            with f4:
-                search_margin = st.text_input("Поиск ID / Report #", key="margin_view_search")
 
             view = margin_df.copy()
             if status_filter != "Все":
@@ -1302,7 +1307,12 @@ elif page == "Цены":
             if clarity_filter != "Все":
                 view = view[view["Чистота"].astype(str) == clarity_filter]
             if search_margin:
-                mask = view["ID"].astype(str).str.contains(search_margin, case=False, na=False) | view["Report #"].astype(str).str.contains(search_margin, case=False, na=False)
+                mask = (
+                    view["ID"].astype(str).str.contains(search_margin, case=False, na=False)
+                    | view["Report #"].astype(str).str.contains(search_margin, case=False, na=False)
+                )
+                if "Stock #" in view.columns:
+                    mask = mask | view["Stock #"].astype(str).str.contains(search_margin, case=False, na=False)
                 view = view[mask]
 
             m1, m2, m3 = st.columns(3)
@@ -1310,6 +1320,7 @@ elif page == "Цены":
             m2.metric("Рассчитано", int((view["Статус расчёта"].astype(str) == "Рассчитано").sum()))
             m3.metric("Без цены поставщика", int((view["Статус расчёта"].astype(str) == "Нет цены поставщика").sum()))
 
+            st.caption("Поиск работает по ID, Report # и Stock #. Можно вводить часть значения.")
             st.dataframe(view, use_container_width=True, hide_index=True, height=520)
 
             st.info("В 6D RUB округляется до целого рубля. Публичное округление вверх до 100 ₽ применяется только для Index / сайта / витрины.")

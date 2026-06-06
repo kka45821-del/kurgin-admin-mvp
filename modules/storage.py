@@ -839,6 +839,7 @@ def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
         base = {
             "ID": stone.get("stone_id", ""),
             "Report #": stone.get("report_number", ""),
+            "Stock #": stone.get("stock_number", ""),
             "Вес": weight if weight else "",
             "Цвет": color,
             "Чистота": clarity,
