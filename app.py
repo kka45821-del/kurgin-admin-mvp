@@ -802,39 +802,51 @@ elif page == "Цены":
     st.title("Цены")
     st.caption("Этап 6: цепочка цен за карат и Index. Пока без записи итоговых цен в камни, публикации и экспорта.")
 
-    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Цены разложены по цепочке: поставщик → расходы → внутренняя цена → маржа 1 → стартовая цена → маржа 2 → рабочая цена → маржа 3 → публичная цена → Index.")
+    st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Навигация разделена на группы: база цены, маржи, расчётные цены, коэффициенты/валюты, Index и просмотр.")
 
-    (
-        tab_supplier,
-        tab_expenses,
-        tab_internal,
-        tab_margin1,
-        tab_start,
-        tab_margin2,
-        tab_working,
-        tab_margin3,
-        tab_public,
-        tab_score,
-        tab_rates,
-        tab_index,
-        tab_margin_view,
-    ) = st.tabs([
-        "Цена поставщика за карат",
-        "Расходы",
-        "Внутренняя цена за карат",
-        "Маржа 1",
-        "Стартовая цена за карат",
-        "Маржа 2",
-        "Рабочая цена за карат",
-        "Маржа 3",
-        "Публичная цена за карат",
-        "KURGIN Score",
-        "Курсы валют",
-        "Index",
-        "Просмотр маржи",
-    ])
+    st.markdown("**Навигация по ценам**")
 
-    with tab_supplier:
+    price_groups = {
+        "База цены": [
+            "Цена поставщика за карат",
+            "Расходы",
+            "Внутренняя цена за карат",
+        ],
+        "Маржи": [
+            "Маржа 1",
+            "Маржа 2",
+            "Маржа 3",
+        ],
+        "Расчётные цены": [
+            "Стартовая цена за карат",
+            "Рабочая цена за карат",
+            "Публичная цена за карат",
+        ],
+        "Коэффициенты и валюты": [
+            "KURGIN Score",
+            "Курсы валют",
+        ],
+        "Index и просмотр": [
+            "Index",
+            "Просмотр маржи",
+        ],
+    }
+
+    selected_price_group = st.radio(
+        "Группа",
+        list(price_groups.keys()),
+        horizontal=True,
+        key="price_nav_group",
+    )
+
+    price_page_selected = st.radio(
+        "Страница",
+        price_groups[selected_price_group],
+        horizontal=True,
+        key=f"price_nav_page_{selected_price_group}",
+    )
+
+    if price_page_selected == "Цена поставщика за карат":
         st.subheader("Цена поставщика за карат")
         st.caption("Удобный ввод матрицей: отдельный блок по каждому цвету, строки = чистота, колонки = диапазоны веса: 1.00–1.49 / 1.50–1.99 / 2.00–2.49 / 2.50–2.99 / 3.00–3.99 / 4.00–4.99 / 5.00+.")
 
@@ -918,7 +930,7 @@ elif page == "Цены":
             st.success("Цены поставщика сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
 
-    with tab_expenses:
+    if price_page_selected == "Расходы":
         st.subheader("Коэффициенты расходов")
         st.caption("Внутренняя цена = цена поставщика × (1 + сумма активных коэффициентов). Например 0.37 = 37%.")
         expenses_df = read_price_expense_rates()
@@ -946,7 +958,7 @@ elif page == "Цены":
             st.success("Коэффициенты расходов сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
 
-    with tab_internal:
+    if price_page_selected == "Внутренняя цена за карат":
         st.subheader("Внутренняя цена за карат")
         st.markdown("""
 ```text
@@ -1052,7 +1064,7 @@ elif page == "Цены":
             st.dataframe(full, use_container_width=True, hide_index=True, height=420)
 
 
-    with tab_margin1:
+    if price_page_selected == "Маржа 1":
         margin_editor_block(
             "start",
             "Маржа 1",
@@ -1067,7 +1079,7 @@ elif page == "Цены":
         )
 
 
-    with tab_start:
+    if price_page_selected == "Стартовая цена за карат":
         calculated_price_tab(
             "Стартовая цена за карат",
             """
@@ -1080,7 +1092,7 @@ elif page == "Цены":
         )
 
 
-    with tab_margin2:
+    if price_page_selected == "Маржа 2":
         margin_editor_block(
             "working",
             "Маржа 2",
@@ -1095,7 +1107,7 @@ elif page == "Цены":
         )
 
 
-    with tab_working:
+    if price_page_selected == "Рабочая цена за карат":
         calculated_price_tab(
             "Рабочая цена за карат",
             """
@@ -1108,7 +1120,7 @@ elif page == "Цены":
         )
 
 
-    with tab_margin3:
+    if price_page_selected == "Маржа 3":
         margin_editor_block(
             "public",
             "Маржа 3",
@@ -1123,7 +1135,7 @@ elif page == "Цены":
         )
 
 
-    with tab_public:
+    if price_page_selected == "Публичная цена за карат":
         calculated_price_tab(
             "Публичная цена за карат",
             """
@@ -1136,7 +1148,7 @@ elif page == "Цены":
         )
 
 
-    with tab_score:
+    if price_page_selected == "KURGIN Score":
         st.subheader("Коэффициенты KURGIN Score")
         st.caption("Коэффициент применяется к стартовой, рабочей, публичной и индексной цене. Для не ROUND — 1.00.")
         score_df = read_price_score_coefficients()
@@ -1161,7 +1173,7 @@ elif page == "Цены":
             st.success("Коэффициенты KURGIN Score сохранены")
             st.caption(f"Backup: {result['backup_dir']}")
 
-    with tab_rates:
+    if price_page_selected == "Курсы валют":
         st.subheader("Курсы валют")
         st.caption("Курсы вводятся вручную. Они не пересчитывают цены автоматически без отдельного подтверждения на будущих этапах.")
         rates_df = read_currency_rates()
@@ -1187,7 +1199,7 @@ elif page == "Цены":
 
 
 
-    with tab_index:
+    if price_page_selected == "Index":
         st.subheader("Index — публичная индексная таблица")
         st.caption("6C: публичная цена за карат из 6B × выбранный коэффициент KURGIN Score. Это справочная таблица, не список конкретных камней.")
 
@@ -1262,7 +1274,7 @@ elif page == "Цены":
 
 
 
-    with tab_margin_view:
+    if price_page_selected == "Просмотр маржи":
         st.subheader("Просмотр маржи по камням")
         st.caption("6D: контрольная таблица по конкретным камням. Это только просмотр: цены, маржи, коэффициенты, курсы и данные камня здесь не редактируются.")
 
