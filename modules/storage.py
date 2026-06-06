@@ -728,3 +728,172 @@ def index_price_matrix_by_color(index_df: pd.DataFrame, color: str) -> pd.DataFr
             item[labels[weight_id]] = "" if match.empty else match.iloc[0].get("index_price_per_ct_display", "")
         rows.append(item)
     return pd.DataFrame(rows)
+
+
+
+
+def _weight_range_for_weight(weight_value) -> str:
+    w = _float_value(weight_value, default=-1)
+    if 1.00 <= w < 1.50:
+        return "1.00-1.49"
+    if 1.50 <= w < 2.00:
+        return "1.50-1.99"
+    if 2.00 <= w < 2.50:
+        return "2.00-2.49"
+    if 2.50 <= w < 3.00:
+        return "2.50-2.99"
+    if 3.00 <= w < 4.00:
+        return "3.00-3.99"
+    if 4.00 <= w < 5.00:
+        return "4.00-4.99"
+    if w >= 5.00:
+        return "5.00+"
+    return ""
+
+
+def _score_key_from_stone(row: dict) -> tuple[str, str]:
+    """Return score key and warning.
+
+    Current temporary mapping by numeric KURGIN Score:
+    <60 poor, <70 fair, <80 standard, <90 high, <95 premium, >=95 elite.
+    If ROUND has no score, return not_calculated and warning.
+    Non-ROUND returns not_calculated without warning.
+    """
+    shape = str(row.get("shape", "")).upper().strip()
+    score = _float_value(row.get("kurgin_score", ""), default=-1)
+
+    if shape != "ROUND":
+        return "not_calculated", ""
+
+    if score < 0:
+        return "not_calculated", "Нет KURGIN Score"
+
+    if score < 60:
+        return "poor", ""
+    if score < 70:
+        return "fair", ""
+    if score < 80:
+        return "standard", ""
+    if score < 90:
+        return "high", ""
+    if score < 95:
+        return "premium", ""
+    return "elite", ""
+
+
+def _score_coefficients_lookup() -> dict:
+    score_df = read_price_score_coefficients()
+    lookup = {}
+    for _, row in score_df.iterrows():
+        key = str(row.get("score_key", ""))
+        lookup[key] = {
+            "name": str(row.get("score_name_ru", key)),
+            "coefficient": _float_value(row.get("coefficient", "1"), 1.0),
+        }
+    return lookup
+
+
+def _convert_and_round_price(value, currency: str, internal_view: bool = True):
+    """Convert from USD and round for 6D internal margin view.
+
+    6D rule:
+    USD -> integer dollar, RUB -> integer ruble, INR -> integer rupee.
+    """
+    if value == "" or value is None:
+        return ""
+    amount = _float_value(value, 0.0)
+    multiplier = _currency_multiplier(currency)
+    converted = amount * multiplier
+    return int(round(converted))
+
+
+def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
+    """6D: calculate margin comparison table for real stones.
+
+    Read-only preview. Does not write results to stones_master.csv.
+    """
+    stones = read_stones()
+    root_df = calculate_root_price_table()
+    score_lookup = _score_coefficients_lookup()
+
+    if stones.empty:
+        return pd.DataFrame()
+
+    root_lookup = {}
+    for _, row in root_df.iterrows():
+        key = (
+            str(row.get("weight_range_id", "")),
+            str(row.get("color", "")).upper().strip(),
+            str(row.get("clarity", "")).upper().strip(),
+        )
+        root_lookup[key] = row.to_dict()
+
+    rows = []
+    for _, stone in stones.iterrows():
+        stone_dict = stone.to_dict()
+        weight = _float_value(stone.get("weight", ""), default=0.0)
+        color = str(stone.get("color", "")).upper().strip()
+        clarity = str(stone.get("clarity", "")).upper().strip()
+        weight_range_id = _weight_range_for_weight(weight)
+
+        base = {
+            "ID": stone.get("stone_id", ""),
+            "Report #": stone.get("report_number", ""),
+            "Вес": weight if weight else "",
+            "Цвет": color,
+            "Чистота": clarity,
+        }
+
+        price_row = root_lookup.get((weight_range_id, color, clarity))
+        if not price_row or str(price_row.get("calculation_status", "")) != "Рассчитано":
+            rows.append({
+                **base,
+                "KURGIN Score": stone.get("kurgin_score", ""),
+                "Цена поставщика за камень без KURGIN Score": "",
+                "Разница: внутренняя − поставщик": "",
+                "Внутренняя цена за камень без KURGIN Score": "",
+                "Разница: стартовая − внутренняя": "",
+                "Стартовая цена за камень с KURGIN Score": "",
+                "Разница: рабочая − стартовая": "",
+                "Рабочая цена за камень с KURGIN Score": "",
+                "Разница: публичная − рабочая": "",
+                "Публичная цена за камень с KURGIN Score": "",
+                "Статус расчёта": "Нет цены поставщика",
+                "Предупреждение": "",
+            })
+            continue
+
+        score_key, warning = _score_key_from_stone(stone_dict)
+        score_info = score_lookup.get(score_key, {"name": "Не рассчитано", "coefficient": 1.0})
+        score_coeff = score_info.get("coefficient", 1.0)
+        score_label = f"{score_info.get('name', score_key)} ×{score_coeff}"
+
+        supplier_stone_usd = _float_value(price_row.get("supplier_price_per_ct_usd", 0)) * weight
+        internal_stone_usd = _float_value(price_row.get("internal_price_per_ct_usd", 0)) * weight
+        start_stone_usd = _float_value(price_row.get("start_price_per_ct_usd", 0)) * score_coeff * weight
+        working_stone_usd = _float_value(price_row.get("working_price_per_ct_usd", 0)) * score_coeff * weight
+        public_stone_usd = _float_value(price_row.get("public_price_per_ct_usd", 0)) * score_coeff * weight
+
+        supplier_display = _convert_and_round_price(supplier_stone_usd, currency)
+        internal_display = _convert_and_round_price(internal_stone_usd, currency)
+        start_display = _convert_and_round_price(start_stone_usd, currency)
+        working_display = _convert_and_round_price(working_stone_usd, currency)
+        public_display = _convert_and_round_price(public_stone_usd, currency)
+
+        rows.append({
+            **base,
+            "KURGIN Score": score_label,
+            "Цена поставщика за камень без KURGIN Score": supplier_display,
+            "Разница: внутренняя − поставщик": internal_display - supplier_display if supplier_display != "" and internal_display != "" else "",
+            "Внутренняя цена за камень без KURGIN Score": internal_display,
+            "Разница: стартовая − внутренняя": start_display - internal_display if start_display != "" and internal_display != "" else "",
+            "Стартовая цена за камень с KURGIN Score": start_display,
+            "Разница: рабочая − стартовая": working_display - start_display if working_display != "" and start_display != "" else "",
+            "Рабочая цена за камень с KURGIN Score": working_display,
+            "Разница: публичная − рабочая": public_display - working_display if public_display != "" and working_display != "" else "",
+            "Публичная цена за камень с KURGIN Score": public_display,
+            "Статус расчёта": "Рассчитано",
+            "Предупреждение": warning,
+        })
+
+    return pd.DataFrame(rows)

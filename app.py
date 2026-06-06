@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -800,7 +800,7 @@ elif page == "Разделы":
 
 elif page == "Цены":
     st.title("Цены")
-    st.caption("Этап 6: цепочка цен за карат и Index. Пока без итоговых цен по камням, просмотра маржи и публикации.")
+    st.caption("Этап 6: цепочка цен за карат и Index. Пока без записи итоговых цен в камни, публикации и экспорта.")
 
     st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Цены разложены по цепочке: поставщик → расходы → внутренняя цена → маржа 1 → стартовая цена → маржа 2 → рабочая цена → маржа 3 → публичная цена → Index.")
 
@@ -817,6 +817,7 @@ elif page == "Цены":
         tab_score,
         tab_rates,
         tab_index,
+        tab_margin_view,
     ) = st.tabs([
         "Цена поставщика за карат",
         "Расходы",
@@ -830,6 +831,7 @@ elif page == "Цены":
         "KURGIN Score",
         "Курсы валют",
         "Index",
+        "Просмотр маржи",
     ])
 
     with tab_supplier:
@@ -1257,6 +1259,48 @@ elif page == "Цены":
                 hide_index=True,
                 height=420,
             )
+
+
+
+    with tab_margin_view:
+        st.subheader("Просмотр маржи по камням")
+        st.caption("6D: контрольная таблица по конкретным камням. Это только просмотр: цены, маржи, коэффициенты, курсы и данные камня здесь не редактируются.")
+
+        selected_currency_margin = st.selectbox("Валюта отображения", ["RUB", "USD", "INR"], index=0, key="margin_view_currency")
+        margin_df = calculate_stone_margin_view(selected_currency_margin)
+
+        if margin_df.empty:
+            st.info("Камней пока нет.")
+        else:
+            f1, f2, f3, f4 = st.columns(4)
+            with f1:
+                status_filter = st.selectbox("Статус расчёта", ["Все"] + sorted(margin_df["Статус расчёта"].dropna().astype(str).unique().tolist()))
+            with f2:
+                color_filter = st.selectbox("Цвет", ["Все"] + sorted([x for x in margin_df["Цвет"].dropna().astype(str).unique().tolist() if x]))
+            with f3:
+                clarity_filter = st.selectbox("Чистота", ["Все"] + sorted([x for x in margin_df["Чистота"].dropna().astype(str).unique().tolist() if x]))
+            with f4:
+                search_margin = st.text_input("Поиск ID / Report #", key="margin_view_search")
+
+            view = margin_df.copy()
+            if status_filter != "Все":
+                view = view[view["Статус расчёта"].astype(str) == status_filter]
+            if color_filter != "Все":
+                view = view[view["Цвет"].astype(str) == color_filter]
+            if clarity_filter != "Все":
+                view = view[view["Чистота"].astype(str) == clarity_filter]
+            if search_margin:
+                mask = view["ID"].astype(str).str.contains(search_margin, case=False, na=False) | view["Report #"].astype(str).str.contains(search_margin, case=False, na=False)
+                view = view[mask]
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Камней в таблице", len(view))
+            m2.metric("Рассчитано", int((view["Статус расчёта"].astype(str) == "Рассчитано").sum()))
+            m3.metric("Без цены поставщика", int((view["Статус расчёта"].astype(str) == "Нет цены поставщика").sum()))
+
+            st.dataframe(view, use_container_width=True, hide_index=True, height=520)
+
+            st.info("В 6D RUB округляется до целого рубля. Публичное округление вверх до 100 ₽ применяется только для Index / сайта / витрины.")
 
 
 elif page == "Журнал импорта":
