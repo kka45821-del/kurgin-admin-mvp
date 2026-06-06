@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -800,7 +800,7 @@ elif page == "Разделы":
 
 elif page == "Цены":
     st.title("Цены")
-    st.caption("Этап 6: цепочка цен за карат и Index. Пока без записи итоговых цен в камни, публикации и экспорта.")
+    st.caption("Этап 6: цепочка цен за карат и Index. Пока без фактической записи итоговых цен в камни, публикации и экспорта. В 7B доступен только предпросмотр записи цен.")
 
     st.info("Базовая расчётная валюта — USD. Внешнее отображение позже будет в RUB. Навигация разделена на группы: база цены, маржи, расчётные цены, коэффициенты/валюты, Index и просмотр.")
 
@@ -829,6 +829,7 @@ elif page == "Цены":
         "Index и просмотр": [
             "Index",
             "Просмотр маржи",
+            "Запись цен",
         ],
     }
 
@@ -1284,20 +1285,15 @@ elif page == "Цены":
         if margin_df.empty:
             st.info("Камней пока нет.")
         else:
-            st.markdown("**Быстрый поиск камня**")
-            search_margin = st.text_input(
-                "Поиск по ID / Report # / Stock #",
-                placeholder="Например: KRG-LG790659323 или LG790659323 или 62523",
-                key="margin_view_search",
-            )
-
-            f1, f2, f3 = st.columns(3)
+            f1, f2, f3, f4 = st.columns(4)
             with f1:
                 status_filter = st.selectbox("Статус расчёта", ["Все"] + sorted(margin_df["Статус расчёта"].dropna().astype(str).unique().tolist()))
             with f2:
                 color_filter = st.selectbox("Цвет", ["Все"] + sorted([x for x in margin_df["Цвет"].dropna().astype(str).unique().tolist() if x]))
             with f3:
                 clarity_filter = st.selectbox("Чистота", ["Все"] + sorted([x for x in margin_df["Чистота"].dropna().astype(str).unique().tolist() if x]))
+            with f4:
+                search_margin = st.text_input("Поиск ID / Report #", key="margin_view_search")
 
             view = margin_df.copy()
             if status_filter != "Все":
@@ -1307,12 +1303,7 @@ elif page == "Цены":
             if clarity_filter != "Все":
                 view = view[view["Чистота"].astype(str) == clarity_filter]
             if search_margin:
-                mask = (
-                    view["ID"].astype(str).str.contains(search_margin, case=False, na=False)
-                    | view["Report #"].astype(str).str.contains(search_margin, case=False, na=False)
-                )
-                if "Stock #" in view.columns:
-                    mask = mask | view["Stock #"].astype(str).str.contains(search_margin, case=False, na=False)
+                mask = view["ID"].astype(str).str.contains(search_margin, case=False, na=False) | view["Report #"].astype(str).str.contains(search_margin, case=False, na=False)
                 view = view[mask]
 
             m1, m2, m3 = st.columns(3)
@@ -1320,10 +1311,59 @@ elif page == "Цены":
             m2.metric("Рассчитано", int((view["Статус расчёта"].astype(str) == "Рассчитано").sum()))
             m3.metric("Без цены поставщика", int((view["Статус расчёта"].astype(str) == "Нет цены поставщика").sum()))
 
-            st.caption("Поиск работает по ID, Report # и Stock #. Можно вводить часть значения.")
             st.dataframe(view, use_container_width=True, hide_index=True, height=520)
 
             st.info("В 6D RUB округляется до целого рубля. Публичное округление вверх до 100 ₽ применяется только для Index / сайта / витрины.")
+
+
+
+    if price_page_selected == "Запись цен":
+        st.subheader("Предпросмотр записи цен")
+        st.caption("7B: безопасный предпросмотр. На этом этапе ничего не записывается в stones_master.csv.")
+
+        preview_currency = st.selectbox("Валюта предпросмотра", ["RUB", "USD", "INR"], index=0, key="price_write_preview_currency")
+
+        if st.button("Сформировать предпросмотр записи цен", type="primary"):
+            st.session_state["price_write_preview"] = build_price_write_preview(preview_currency)
+
+        preview_data = st.session_state.get("price_write_preview")
+
+        if not preview_data:
+            st.info("Нажмите “Сформировать предпросмотр записи цен”. Данные не будут записаны.")
+        else:
+            summary = preview_data["summary"]
+
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Камней всего", summary.get("total", 0))
+            c2.metric("Будут записаны цены", summary.get("will_write", 0))
+            c3.metric("Без цены поставщика", summary.get("missing_supplier_price", 0))
+            c4.metric("Ручные цены", summary.get("manual_prices", 0))
+            c5.metric("Будут пропущены", summary.get("skipped", 0))
+
+            st.warning("7B — только предпросмотр. Запись цен в камни появится только на этапе 7C после отдельного подтверждения правил.")
+
+            with st.expander("Камни, которым будут записаны цены", expanded=True):
+                df = preview_data["will_write_df"]
+                if df.empty:
+                    st.info("Нет камней для записи цен.")
+                else:
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=360)
+
+            with st.expander("Камни без рассчитанной цены", expanded=True):
+                df = preview_data["missing_price_df"]
+                if df.empty:
+                    st.success("Нет камней без цены поставщика.")
+                else:
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=360)
+
+            with st.expander("Камни с ручными ценами", expanded=False):
+                df = preview_data["manual_df"]
+                if df.empty:
+                    st.info("Ручных цен пока нет.")
+                else:
+                    st.dataframe(df, use_container_width=True, hide_index=True, height=300)
+
+            st.info("Цена по запросу пока не включается. Массовое разрешение allow_price_on_request будет отдельным подтверждаемым действием на следующем этапе.")
 
 
 elif page == "Журнал импорта":

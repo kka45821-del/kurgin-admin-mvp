@@ -839,7 +839,6 @@ def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
         base = {
             "ID": stone.get("stone_id", ""),
             "Report #": stone.get("report_number", ""),
-            "Stock #": stone.get("stock_number", ""),
             "Вес": weight if weight else "",
             "Цвет": color,
             "Чистота": clarity,
@@ -898,3 +897,111 @@ def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+
+
+def build_price_write_preview(currency: str = "RUB") -> dict:
+    """7B: build a safe preview for future price write.
+
+    This function must not write to stones_master.csv.
+    """
+    margin_view = calculate_stone_margin_view(currency)
+    stones = read_stones()
+
+    if margin_view.empty:
+        return {
+            "summary": {
+                "total": 0,
+                "will_write": 0,
+                "missing_supplier_price": 0,
+                "manual_prices": 0,
+                "skipped": 0,
+                "price_on_request_possible": 0,
+            },
+            "will_write_df": pd.DataFrame(),
+            "missing_price_df": pd.DataFrame(),
+            "manual_df": pd.DataFrame(),
+        }
+
+    stone_source = {}
+    if not stones.empty and "stone_id" in stones.columns:
+        for _, row in stones.iterrows():
+            sid = str(row.get("stone_id", ""))
+            stone_source[sid] = {
+                "price_source": str(row.get("price_source", "")),
+                "shape": str(row.get("shape", "")),
+                "catalog_section": str(row.get("catalog_section", "")),
+                "allow_price_on_request": str(row.get("allow_price_on_request", "false")),
+                "current_public_price_total_rub": str(row.get("public_price_total_rub", "")),
+            }
+
+    rows_write = []
+    rows_missing = []
+    rows_manual = []
+
+    for _, row in margin_view.iterrows():
+        sid = str(row.get("ID", ""))
+        meta = stone_source.get(sid, {})
+        price_source_before = meta.get("price_source", "")
+        is_manual = price_source_before == "manual"
+        status = str(row.get("Статус расчёта", ""))
+
+        if is_manual:
+            rows_manual.append({
+                "ID": sid,
+                "Report #": row.get("Report #", ""),
+                "Текущая цена": meta.get("current_public_price_total_rub", ""),
+                "Новая рассчитанная цена": row.get("Публичная цена за камень с KURGIN Score", ""),
+                "Действие": "Не перезаписывать без отдельного подтверждения",
+            })
+            continue
+
+        if status != "Рассчитано":
+            rows_missing.append({
+                "ID": sid,
+                "Report #": row.get("Report #", ""),
+                "Вес": row.get("Вес", ""),
+                "Цвет": row.get("Цвет", ""),
+                "Чистота": row.get("Чистота", ""),
+                "Форма": meta.get("shape", ""),
+                "Раздел": meta.get("catalog_section", ""),
+                "Причина": status or "Нет цены поставщика",
+                "Публичное отображение": "Цена по запросу",
+                "Показывать “Цена по запросу”": meta.get("allow_price_on_request", "false"),
+            })
+            continue
+
+        rows_write.append({
+            "ID": sid,
+            "Report #": row.get("Report #", ""),
+            "Вес": row.get("Вес", ""),
+            "Цвет": row.get("Цвет", ""),
+            "Чистота": row.get("Чистота", ""),
+            "Стартовая цена RUB": row.get("Стартовая цена за камень с KURGIN Score", ""),
+            "Рабочая цена RUB": row.get("Рабочая цена за камень с KURGIN Score", ""),
+            "Публичная цена RUB": row.get("Публичная цена за камень с KURGIN Score", ""),
+            "price_source до": price_source_before or "",
+            "price_source после": "auto_calculated",
+            "Предупреждение": row.get("Предупреждение", ""),
+        })
+
+    will_write_df = pd.DataFrame(rows_write)
+    missing_price_df = pd.DataFrame(rows_missing)
+    manual_df = pd.DataFrame(rows_manual)
+
+    summary = {
+        "total": int(len(margin_view)),
+        "will_write": int(len(will_write_df)),
+        "missing_supplier_price": int(len(missing_price_df)),
+        "manual_prices": int(len(manual_df)),
+        "skipped": int(len(missing_price_df) + len(manual_df)),
+        "price_on_request_possible": int(len(missing_price_df)),
+    }
+
+    return {
+        "summary": summary,
+        "will_write_df": will_write_df,
+        "missing_price_df": missing_price_df,
+        "manual_df": manual_df,
+    }
