@@ -639,7 +639,7 @@ def _round_price(value: float, currency: str, public_index: bool = False) -> int
         if amount <= 0:
             return 0
         import math
-        return int(math.ceil(amount / 1000.0) * 1000)
+        return int(math.ceil(amount / 100.0) * 100)
     return int(round(amount))
 
 

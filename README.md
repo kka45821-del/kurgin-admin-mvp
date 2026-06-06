@@ -141,7 +141,7 @@ This package includes the safe existing-stone update fix from Stage 4.
 - рабочую цену;
 - публичную цену;
 - Index с KURGIN Score;
-- округление RUB вверх до 1000 ₽.
+- округление RUB вверх до 100 ₽.
 
 Формулы и расчёты не изменены.
 
@@ -220,3 +220,16 @@ This package includes the safe existing-stone update fix from Stage 4.
 - 5.00+
 
 Формулы и расчёты не изменены.
+
+
+## 6C.7 — Округление RUB Index до 100 ₽
+
+Публичный Index в RUB округляется вверх до 100 ₽.
+
+Пример:
+
+- 22 650 ₽ → 22 700 ₽
+- 22 601 ₽ → 22 700 ₽
+- 22 600 ₽ → 22 600 ₽
+
+Формулы расчёта не изменены.

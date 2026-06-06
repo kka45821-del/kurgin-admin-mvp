@@ -1219,7 +1219,7 @@ elif page == "Цены":
         selected_score_key = score_labels.get(selected_score_label, "standard")
         index_df = calculate_index_table(selected_score_key, selected_currency)
 
-        st.info("По умолчанию используется “Стандартный ×1.00”. Для RUB в публичном Index округление идёт вверх до 1000 ₽. Если цена поставщика пустая или 0, ячейка Index не рассчитывается.")
+        st.info("По умолчанию используется “Стандартный ×1.00”. Для RUB в публичном Index округление идёт вверх до 100 ₽. Если цена поставщика пустая или 0, ячейка Index не рассчитывается.")
 
         st.markdown("""
 **Index по цветам** — удобный публичный вид таблицы.  
