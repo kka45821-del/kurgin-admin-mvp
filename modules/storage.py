@@ -905,6 +905,8 @@ def build_price_write_preview(currency: str = "RUB") -> dict:
     """7B: build a safe preview for future price write.
 
     This function must not write to stones_master.csv.
+
+    Important: use the same status logic as calculate_stone_margin_view.
     """
     margin_view = calculate_stone_margin_view(currency)
     stones = read_stones()
@@ -945,45 +947,50 @@ def build_price_write_preview(currency: str = "RUB") -> dict:
         meta = stone_source.get(sid, {})
         price_source_before = meta.get("price_source", "")
         is_manual = price_source_before == "manual"
-        status = str(row.get("Статус расчёта", ""))
+        status = str(row.get("Статус расчёта", "")).strip()
+
+        public_price = row.get("Публичная цена за камень с KURGIN Score", "")
+        has_public_price = str(public_price).strip() not in {"", "None", "nan"}
 
         if is_manual:
             rows_manual.append({
                 "ID": sid,
                 "Report #": row.get("Report #", ""),
                 "Текущая цена": meta.get("current_public_price_total_rub", ""),
-                "Новая рассчитанная цена": row.get("Публичная цена за камень с KURGIN Score", ""),
+                "Новая рассчитанная цена": public_price,
                 "Действие": "Не перезаписывать без отдельного подтверждения",
             })
             continue
 
-        if status != "Рассчитано":
-            rows_missing.append({
+        # A stone is writable only if margin view says it is calculated
+        # and there is a public price value.
+        if status == "Рассчитано" and has_public_price:
+            rows_write.append({
                 "ID": sid,
                 "Report #": row.get("Report #", ""),
                 "Вес": row.get("Вес", ""),
                 "Цвет": row.get("Цвет", ""),
                 "Чистота": row.get("Чистота", ""),
-                "Форма": meta.get("shape", ""),
-                "Раздел": meta.get("catalog_section", ""),
-                "Причина": status or "Нет цены поставщика",
-                "Публичное отображение": "Цена по запросу",
-                "Показывать “Цена по запросу”": meta.get("allow_price_on_request", "false"),
+                "Стартовая цена RUB": row.get("Стартовая цена за камень с KURGIN Score", ""),
+                "Рабочая цена RUB": row.get("Рабочая цена за камень с KURGIN Score", ""),
+                "Публичная цена RUB": public_price,
+                "price_source до": price_source_before or "",
+                "price_source после": "auto_calculated",
+                "Предупреждение": row.get("Предупреждение", ""),
             })
             continue
 
-        rows_write.append({
+        rows_missing.append({
             "ID": sid,
             "Report #": row.get("Report #", ""),
             "Вес": row.get("Вес", ""),
             "Цвет": row.get("Цвет", ""),
             "Чистота": row.get("Чистота", ""),
-            "Стартовая цена RUB": row.get("Стартовая цена за камень с KURGIN Score", ""),
-            "Рабочая цена RUB": row.get("Рабочая цена за камень с KURGIN Score", ""),
-            "Публичная цена RUB": row.get("Публичная цена за камень с KURGIN Score", ""),
-            "price_source до": price_source_before or "",
-            "price_source после": "auto_calculated",
-            "Предупреждение": row.get("Предупреждение", ""),
+            "Форма": meta.get("shape", ""),
+            "Раздел": meta.get("catalog_section", ""),
+            "Причина": status or "Нет цены поставщика",
+            "Публичное отображение": "Цена по запросу",
+            "Показывать “Цена по запросу”": meta.get("allow_price_on_request", "false"),
         })
 
     will_write_df = pd.DataFrame(rows_write)
@@ -1005,3 +1012,4 @@ def build_price_write_preview(currency: str = "RUB") -> dict:
         "missing_price_df": missing_price_df,
         "manual_df": manual_df,
     }
+
