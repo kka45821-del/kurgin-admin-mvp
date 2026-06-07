@@ -1382,3 +1382,340 @@ def enable_price_on_request_for_missing(currency: str = "RUB", expected_fingerpr
         "backup_dir": str(backup_dir),
         "enabled": int(len(records)),
     }
+
+
+PUBLIC_LAYER_GROUPS = [
+    "Public OK — numeric price",
+    "Public OK — price on request",
+    "Ready but not published",
+    "Hidden by status",
+    "Hidden by availability_status",
+    "Hidden by catalog_section",
+    "Missing price",
+    "Manual price review",
+    "Data problems",
+]
+
+PUBLIC_CARD_REQUIRED_FIELDS = [
+    "shape",
+    "weight",
+    "color",
+    "clarity",
+    "kurgin_score",
+    "public_price_display",
+]
+
+PUBLIC_CARD_WARNING_FIELDS = [
+    "min_diameter",
+    "max_diameter",
+    "depth_mm",
+    "cut",
+    "symmetry",
+    "polish",
+    "fluorescence",
+]
+
+PUBLIC_PREVIEW_COLUMNS = [
+    "stone_id",
+    "report_number",
+    "lab",
+    "shape",
+    "weight",
+    "color",
+    "clarity",
+    "kurgin_score",
+    "public_price_display",
+    "price_status_public",
+    "availability_status_public",
+    "catalog_section",
+    "section_name",
+    "min_diameter",
+    "max_diameter",
+    "depth_mm",
+    "cut_grade",
+    "symmetry",
+    "polish",
+    "fluorescence",
+    "public_card_status",
+    "public_visibility_reason",
+]
+
+
+def _has_text(value) -> bool:
+    if value is None:
+        return False
+    text = str(value).strip()
+    return text not in {"", "nan", "NaN", "<NA>"}
+
+
+def _is_positive_number(value) -> bool:
+    return _float_value(value, 0.0) > 0
+
+
+def _section_lookup() -> dict:
+    sections = read_catalog_sections()
+    lookup = {}
+    for _, row in sections.iterrows():
+        section_id = str(row.get("section_id", "")).strip()
+        if not section_id:
+            continue
+        lookup[section_id] = {
+            "section_name_ru": str(row.get("section_name_ru", section_id)),
+            "section_name_en": str(row.get("section_name_en", section_id)),
+            "is_public": _bool_text(row.get("is_public", "false")) == "true",
+        }
+    return lookup
+
+
+def _missing_fields(row: dict, fields: list[str]) -> list[str]:
+    missing = []
+    for field in fields:
+        if field not in row:
+            continue
+        if not _has_text(row.get(field, "")):
+            missing.append(field)
+    return missing
+
+
+def _price_public_state(row: dict) -> tuple[str, str, bool, bool, list[str]]:
+    """Return price_kind, reason, is_public_price, is_manual_review, problems."""
+    price_status = str(row.get("price_status", "")).strip().lower()
+    price_source = str(row.get("price_source", "")).strip().lower()
+    price_display = str(row.get("public_price_display", "")).strip()
+    allow_por = _bool_text(row.get("allow_price_on_request", "false")) == "true"
+    public_total_rub = row.get("public_price_total_rub", "")
+    problems = []
+
+    if price_status == "calculated":
+        if not _has_text(price_display):
+            problems.append("calculated without public_price_display")
+        if not _is_positive_number(public_total_rub):
+            problems.append("calculated without public_price_total_rub")
+        if problems:
+            return "problem", "Некорректная рассчитанная цена", False, False, problems
+        manual_review = price_source == "manual"
+        if allow_por:
+            problems.append("allow_price_on_request true with calculated price")
+        return "numeric", "Числовая публичная цена готова", True, manual_review, problems
+
+    if price_status == "missing_supplier_price":
+        if allow_por and price_display == "Цена по запросу":
+            return "price_on_request", "Разрешено отображение “Цена по запросу”", True, False, []
+        return "missing", "Нет цены поставщика и “Цена по запросу” не разрешена", False, False, []
+
+    if not price_status:
+        return "missing", "price_status пустой", False, False, ["empty price_status"]
+
+    return "problem", f"Неизвестный price_status: {price_status}", False, False, [f"unknown price_status: {price_status}"]
+
+
+def _build_public_preview_row(row: dict, section_info: dict, price_kind: str, reason: str) -> dict:
+    return {
+        "stone_id": row.get("stone_id", ""),
+        "report_number": row.get("report_number", ""),
+        "lab": row.get("lab", ""),
+        "shape": row.get("shape", ""),
+        "weight": row.get("weight", ""),
+        "color": row.get("color", ""),
+        "clarity": row.get("clarity", ""),
+        "kurgin_score": row.get("kurgin_score", ""),
+        "public_price_display": row.get("public_price_display", ""),
+        "price_status_public": price_kind,
+        "availability_status_public": row.get("availability_status", ""),
+        "catalog_section": row.get("catalog_section", ""),
+        "section_name": section_info.get("section_name_ru", ""),
+        "min_diameter": row.get("min_diameter", ""),
+        "max_diameter": row.get("max_diameter", ""),
+        "depth_mm": row.get("depth_mm", ""),
+        "cut_grade": row.get("cut", ""),
+        "symmetry": row.get("symmetry", ""),
+        "polish": row.get("polish", ""),
+        "fluorescence": row.get("fluorescence", ""),
+        "public_card_status": "public_candidate",
+        "public_visibility_reason": reason,
+    }
+
+
+def build_public_layer_preview() -> dict:
+    """7E: build read-only Admin preview/audit for the future public layer.
+
+    This function applies 7D public-layer rules. It does not mutate CSV files,
+    does not create backups, does not write exports and does not sync data.
+    """
+    ensure_data_files()
+    stones = read_stones()
+    sections = _section_lookup()
+    generated_at = _now_iso()
+
+    audit_rows = []
+    public_rows = []
+
+    for _, stone_row in stones.iterrows():
+        row = stone_row.to_dict()
+        sid = str(row.get("stone_id", ""))
+        status = str(row.get("status", "")).strip().lower()
+        availability = str(row.get("availability_status", "")).strip().lower()
+        section_id = str(row.get("catalog_section", "")).strip()
+        section_info = sections.get(section_id, {})
+        section_exists = bool(section_info)
+        section_public = bool(section_info.get("is_public", False))
+
+        problems = []
+        warnings = []
+        group = "Data problems"
+        public_candidate = False
+        price_kind = "not_public"
+        reason = ""
+        control = "blocked"
+
+        if not section_id:
+            group = "Hidden by catalog_section"
+            reason = "catalog_section пустой"
+        elif not section_exists:
+            group = "Data problems"
+            reason = "catalog_section не найден в catalog_sections.csv"
+            problems.append("catalog_section not found")
+        elif not section_public:
+            group = "Hidden by catalog_section"
+            reason = "catalog_sections.is_public != true"
+        elif status == "ready":
+            group = "Ready but not published"
+            reason = "status = ready; готово внутри Admin, но не public"
+        elif status != "published":
+            group = "Hidden by status"
+            reason = f"status = {status or 'empty'}"
+        elif availability != "in_stock":
+            group = "Hidden by availability_status"
+            reason = f"availability_status = {availability or 'empty'}"
+        else:
+            price_kind, price_reason, price_is_public, manual_review, price_problems = _price_public_state(row)
+            problems.extend(price_problems)
+
+            warning_missing = _missing_fields(row, PUBLIC_CARD_WARNING_FIELDS)
+
+            if price_kind == "missing":
+                group = "Missing price"
+                reason = price_reason
+            elif price_kind == "problem":
+                group = "Data problems"
+                reason = price_reason
+                problems.extend(price_problems)
+            else:
+                required_missing = _missing_fields(row, PUBLIC_CARD_REQUIRED_FIELDS)
+                if required_missing:
+                    group = "Data problems"
+                    reason = "Не заполнены обязательные public card fields: " + ", ".join(required_missing)
+                    problems.append("missing required public card fields: " + ", ".join(required_missing))
+                elif price_kind == "numeric" and manual_review:
+                    group = "Manual price review"
+                    public_candidate = True
+                    reason = "Числовая цена готова, но price_source = manual требует Admin review"
+                    control = "warning"
+                elif price_kind == "numeric":
+                    group = "Public OK — numeric price"
+                    public_candidate = True
+                    reason = price_reason
+                    control = "ok" if not price_problems else "warning"
+                elif price_kind == "price_on_request":
+                    group = "Public OK — price on request"
+                    public_candidate = True
+                    reason = price_reason
+                    control = "ok"
+
+            if warning_missing:
+                warnings.append("Missing card detail fields: " + ", ".join(warning_missing))
+            if price_problems and public_candidate:
+                warnings.append("; ".join(price_problems))
+
+        if problems and group != "Data problems" and control == "ok":
+            control = "warning"
+        if problems and group == "Data problems":
+            control = "problem"
+        if warnings and control == "ok":
+            control = "warning"
+
+        audit_item = {
+            "Группа": group,
+            "Контроль": control,
+            "Причина": reason,
+            "Проблемы": "; ".join(dict.fromkeys([p for p in problems if p])),
+            "Предупреждения": "; ".join(dict.fromkeys([w for w in warnings if w])),
+            "Public candidate": "yes" if public_candidate else "no",
+            "ID": sid,
+            "Report #": row.get("report_number", ""),
+            "Lab": row.get("lab", ""),
+            "Форма": row.get("shape", ""),
+            "Карат": row.get("weight", ""),
+            "Цвет": row.get("color", ""),
+            "Чистота": row.get("clarity", ""),
+            "KURGIN Score": row.get("kurgin_score", ""),
+            "Цена": row.get("public_price_display", ""),
+            "status": status,
+            "availability_status": availability,
+            "catalog_section": section_id,
+            "section_name": section_info.get("section_name_ru", ""),
+            "section_is_public": "true" if section_public else "false",
+            "price_status": row.get("price_status", ""),
+            "price_source": row.get("price_source", ""),
+            "allow_price_on_request": _bool_text(row.get("allow_price_on_request", "false")),
+            "min_diameter": row.get("min_diameter", ""),
+            "max_diameter": row.get("max_diameter", ""),
+            "depth_mm": row.get("depth_mm", ""),
+            "cut": row.get("cut", ""),
+            "symmetry": row.get("symmetry", ""),
+            "polish": row.get("polish", ""),
+            "fluorescence": row.get("fluorescence", ""),
+        }
+        audit_rows.append(audit_item)
+
+        if public_candidate:
+            public_rows.append(_build_public_preview_row(row, section_info, price_kind, reason))
+
+    audit_df = pd.DataFrame(audit_rows)
+    public_preview_df = pd.DataFrame(public_rows)
+    for col in PUBLIC_PREVIEW_COLUMNS:
+        if col not in public_preview_df.columns:
+            public_preview_df[col] = ""
+    public_preview_df = public_preview_df[PUBLIC_PREVIEW_COLUMNS] if not public_preview_df.empty else pd.DataFrame(columns=PUBLIC_PREVIEW_COLUMNS)
+
+    group_counts = []
+    for group_name in PUBLIC_LAYER_GROUPS:
+        count = int((audit_df["Группа"].astype(str) == group_name).sum()) if not audit_df.empty and "Группа" in audit_df.columns else 0
+        group_counts.append({"Группа": group_name, "Количество": count})
+    group_counts_df = pd.DataFrame(group_counts)
+
+    problem_df = audit_df[audit_df["Контроль"].astype(str) == "problem"].copy() if not audit_df.empty else pd.DataFrame()
+    warning_df = audit_df[audit_df["Контроль"].astype(str) == "warning"].copy() if not audit_df.empty else pd.DataFrame()
+
+    public_ok_numeric = 0
+    if not public_preview_df.empty:
+        public_ok_numeric = int((public_preview_df["price_status_public"].astype(str) == "numeric").sum())
+    public_ok_request = 0
+    if not public_preview_df.empty:
+        public_ok_request = int((public_preview_df["price_status_public"].astype(str) == "price_on_request").sum())
+
+    summary = {
+        "total": int(len(audit_df)),
+        "public_candidates": int(len(public_preview_df)),
+        "public_ok_numeric": public_ok_numeric,
+        "public_ok_price_on_request": public_ok_request,
+        "manual_price_review": int((audit_df["Группа"].astype(str) == "Manual price review").sum()) if not audit_df.empty else 0,
+        "ready_not_published": int((audit_df["Группа"].astype(str) == "Ready but not published").sum()) if not audit_df.empty else 0,
+        "hidden_by_status": int((audit_df["Группа"].astype(str) == "Hidden by status").sum()) if not audit_df.empty else 0,
+        "hidden_by_availability": int((audit_df["Группа"].astype(str) == "Hidden by availability_status").sum()) if not audit_df.empty else 0,
+        "hidden_by_section": int((audit_df["Группа"].astype(str) == "Hidden by catalog_section").sum()) if not audit_df.empty else 0,
+        "missing_price": int((audit_df["Группа"].astype(str) == "Missing price").sum()) if not audit_df.empty else 0,
+        "data_problems": int((audit_df["Группа"].astype(str) == "Data problems").sum()) if not audit_df.empty else 0,
+        "warnings": int(len(warning_df)),
+        "generated_at": generated_at,
+    }
+
+    return {
+        "summary": summary,
+        "audit_df": audit_df,
+        "public_preview_df": public_preview_df,
+        "group_counts_df": group_counts_df,
+        "problem_df": problem_df,
+        "warning_df": warning_df,
+        "generated_at": generated_at,
+    }

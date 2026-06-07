@@ -751,3 +751,71 @@ Next code stage must be separate:
 ```text
 7E — Admin preview/audit of the public layer
 ```
+
+## 7E — Admin preview/audit публичного слоя
+
+7E implements a read-only Admin UI preview/audit for the future public layer.
+
+Location:
+
+```text
+Цены → Index и просмотр → Публичный слой
+```
+
+Allowed in 7E:
+
+```text
+read stones_master.csv
+read catalog_sections.csv
+apply 7D public-layer rules
+show public-safe preview rows
+show audit groups
+show data problems
+show warnings/manual review
+filter/search audit table
+```
+
+Forbidden in 7E:
+
+```text
+write stones_master.csv
+write catalog_sections.csv
+create backup
+write exports/
+sync with site
+change status
+change availability_status
+change catalog_section
+change prices
+turn on allow_price_on_request
+create PDF
+create asset manager
+create orders/reserves/payments
+```
+
+7E audit groups:
+
+```text
+Public OK — numeric price
+Public OK — price on request
+Ready but not published
+Hidden by status
+Hidden by availability_status
+Hidden by catalog_section
+Missing price
+Manual price review
+Data problems
+```
+
+7E must keep business logic portable:
+
+```text
+modules/storage.py → build_public_layer_preview()
+app.py → display only
+```
+
+7E does not create public export/schema. Export/public card schema remains a later stage:
+
+```text
+7F / 8A — export/public card schema
+```

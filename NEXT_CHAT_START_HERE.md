@@ -1,11 +1,11 @@
 # NEXT CHAT START HERE — KURGIN Admin
 
-Continue from stable checkpoint **27**.
+Continue from stable checkpoint **28**.
 
 ## Stable checkpoint
 
 ```text
-Checkpoint 27 — Stage 7D Public Layer Rules
+Checkpoint 28 — Stage 7E Public Layer Preview/Audit
 ```
 
 ## Previous stable checkpoints
@@ -13,6 +13,7 @@ Checkpoint 27 — Stage 7D Public Layer Rules
 ```text
 Checkpoint 25 — Stage 7C completed / rules locked
 Checkpoint 26 — Stage 7D.0 Unified Report / PDF / Assets foundation
+Checkpoint 27 — Stage 7D Public Layer Rules
 ```
 
 ## Current confirmed state
@@ -25,7 +26,6 @@ manual prices are not silently overwritten
 missing supplier price stones do not receive numeric prices
 allow_price_on_request is not enabled automatically
 Цена по запросу requires separate confirmed action
-GitHub main contains 7C
 ```
 
 ## Stage 7D.0 status
@@ -45,12 +45,35 @@ no export/sync
 
 ```text
 public-layer rules documented
-no app.py changes
-no modules changes
-no data/schema changes
-no Streamlit UI changes
-no exports
-no sync
+price is part of public catalog card
+public layer may show only prepared public_price_display
+status / availability_status / catalog_section / price rules documented
+no Streamlit UI in 7D
+no export/sync in 7D
+```
+
+## Stage 7E status
+
+```text
+Admin preview/audit for public layer implemented
+location: Цены → Index и просмотр → Публичный слой
+logic: modules/storage.py → build_public_layer_preview()
+Streamlit displays the result only
+read-only: no CSV mutation, no backup, no exports/, no sync, no PDF
+```
+
+## 7E audit groups
+
+```text
+Public OK — numeric price
+Public OK — price on request
+Ready but not published
+Hidden by status
+Hidden by availability_status
+Hidden by catalog_section
+Missing price
+Manual price review
+Data problems
 ```
 
 ## Public eligibility baseline
@@ -89,25 +112,6 @@ allow_price_on_request = true
 public_price_display = Цена по запросу
 ```
 
-## Future public card summary
-
-```text
-shape
-carat / weight
-color
-clarity
-kurgin_score
-public_price_display
-min_diameter
-max_diameter
-height / depth_mm
-cut_grade
-symmetry
-polish
-fluorescence
-tags
-```
-
 ## Do not do without separate approval
 
 ```text
@@ -120,27 +124,19 @@ Do not create kurgin-report-core yet.
 Do not write public export files.
 Do not sync to site.
 Do not mutate stones_master.csv in public-layer audit.
-Do not install old draft 7D ZIPs.
+Do not create orders/reserves/payments.
 ```
 
-## Next recommended stage
+## Next recommended topic
 
-Discuss and then implement only after approval:
+Discuss rules first, no code until approved:
 
 ```text
-7E — Admin preview/audit of the public layer
+7F / 8A — export/public card schema
 ```
 
-7E should be read-only:
+Main question:
 
 ```text
-read stones_master.csv
-read catalog_sections.csv
-apply Stage 7D rules
-show groups and reasons in Admin
-allow download of preview from memory
-no CSV mutation
-no exports/ writes
-no backup creation
-no site sync
+What exact public-safe data should leave Admin, where should it be stored, and how should the public site consume it?
 ```

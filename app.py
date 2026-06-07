@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, build_public_layer_preview, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -830,6 +830,7 @@ elif page == "Цены":
             "Index",
             "Просмотр маржи",
             "Запись цен",
+            "Публичный слой",
         ],
     }
 
@@ -1464,6 +1465,116 @@ elif page == "Цены":
                             st.session_state["price_write_preview"] = build_price_write_preview(preview_currency)
                         else:
                             st.error(result.get("message", "Действие не выполнено."))
+
+
+    if price_page_selected == "Публичный слой":
+        st.subheader("Публичный слой — preview / audit")
+        st.caption("7E: read-only предпросмотр того, какие камни могут попасть в будущий публичный слой. Ничего не записывает и ничего не отправляет на сайт.")
+
+        st.info(
+            "7E применяет правила 7D: status = published, availability_status = in_stock, публичный раздел каталога, "
+            "и готовое public_price_display. CSV, exports, backup, PDF и sync здесь не создаются."
+        )
+
+        public_data = build_public_layer_preview()
+        summary = public_data.get("summary", {})
+        audit_df = public_data.get("audit_df", pd.DataFrame())
+        public_preview_df = public_data.get("public_preview_df", pd.DataFrame())
+        problem_df = public_data.get("problem_df", pd.DataFrame())
+        warning_df = public_data.get("warning_df", pd.DataFrame())
+        group_counts_df = public_data.get("group_counts_df", pd.DataFrame())
+
+        st.caption(f"Аудит сформирован: {summary.get('generated_at', '')}")
+
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("Камней всего", summary.get("total", 0))
+        m2.metric("Public candidates", summary.get("public_candidates", 0))
+        m3.metric("Numeric price", summary.get("public_ok_numeric", 0))
+        m4.metric("Цена по запросу", summary.get("public_ok_price_on_request", 0))
+        m5.metric("Manual review", summary.get("manual_price_review", 0))
+        m6.metric("Data problems", summary.get("data_problems", 0))
+
+        if summary.get("data_problems", 0):
+            st.warning("Есть data problems. Такие строки не должны попадать в будущий публичный слой до исправления.")
+        else:
+            st.success("Критических data problems по правилам публичного слоя не найдено.")
+
+        with st.expander("Группы аудита", expanded=True):
+            if group_counts_df.empty:
+                st.info("Нет данных для группировки.")
+            else:
+                st.dataframe(group_counts_df, use_container_width=True, hide_index=True, height=320)
+
+        with st.expander("Будущий публичный слой — preview public-safe полей", expanded=True):
+            st.caption("Только preview. Эти данные не записываются в exports/ и не отправляются на сайт.")
+            if public_preview_df.empty:
+                st.info("Нет камней, проходящих правила публичного слоя.")
+            else:
+                st.dataframe(public_preview_df, use_container_width=True, hide_index=True, height=420)
+
+        st.divider()
+        st.subheader("Полный audit")
+
+        if audit_df.empty:
+            st.info("Камней пока нет.")
+        else:
+            f1, f2, f3, f4 = st.columns(4)
+            with f1:
+                group_options = ["Все"] + sorted([x for x in audit_df["Группа"].dropna().astype(str).unique().tolist() if x])
+                selected_group = st.selectbox("Группа", group_options, key="public_layer_group_filter")
+            with f2:
+                control_options = ["Все"] + sorted([x for x in audit_df["Контроль"].dropna().astype(str).unique().tolist() if x])
+                selected_control = st.selectbox("Контроль", control_options, key="public_layer_control_filter")
+            with f3:
+                status_options = ["Все"] + sorted([x for x in audit_df["status"].dropna().astype(str).unique().tolist() if x])
+                selected_status = st.selectbox("status", status_options, key="public_layer_status_filter")
+            with f4:
+                search_public = st.text_input("Поиск ID / Report #", key="public_layer_search")
+
+            view = audit_df.copy()
+            if selected_group != "Все":
+                view = view[view["Группа"].astype(str) == selected_group]
+            if selected_control != "Все":
+                view = view[view["Контроль"].astype(str) == selected_control]
+            if selected_status != "Все":
+                view = view[view["status"].astype(str) == selected_status]
+            if search_public:
+                mask = pd.Series(False, index=view.index)
+                for col in ["ID", "Report #"]:
+                    if col in view.columns:
+                        mask = mask | view[col].astype(str).str.contains(search_public, case=False, na=False)
+                view = view[mask]
+
+            audit_columns = [
+                "Группа", "Контроль", "Причина", "Проблемы", "Предупреждения", "Public candidate",
+                "ID", "Report #", "Lab", "Форма", "Карат", "Цвет", "Чистота", "KURGIN Score", "Цена",
+                "status", "availability_status", "catalog_section", "section_name", "section_is_public",
+                "price_status", "price_source", "allow_price_on_request",
+                "min_diameter", "max_diameter", "depth_mm", "cut", "symmetry", "polish", "fluorescence",
+            ]
+            audit_columns = [c for c in audit_columns if c in view.columns]
+            st.dataframe(view[audit_columns], use_container_width=True, hide_index=True, height=560)
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("В фильтре", len(view))
+            c2.metric("Problems", int((view["Контроль"].astype(str) == "problem").sum()) if "Контроль" in view.columns else 0)
+            c3.metric("Warnings", int((view["Контроль"].astype(str) == "warning").sum()) if "Контроль" in view.columns else 0)
+
+        with st.expander("Data problems", expanded=False):
+            if problem_df.empty:
+                st.success("Data problems не найдены.")
+            else:
+                cols = [c for c in ["Группа", "Причина", "Проблемы", "ID", "Report #", "status", "availability_status", "catalog_section", "price_status", "Цена"] if c in problem_df.columns]
+                st.dataframe(problem_df[cols], use_container_width=True, hide_index=True, height=360)
+
+        with st.expander("Warnings / manual review", expanded=False):
+            if warning_df.empty:
+                st.info("Warnings не найдены.")
+            else:
+                cols = [c for c in ["Группа", "Причина", "Предупреждения", "ID", "Report #", "price_source", "Цена"] if c in warning_df.columns]
+                st.dataframe(warning_df[cols], use_container_width=True, hide_index=True, height=360)
+
+        st.info("7E — только preview/audit. Публикация, export/schema, sync, PDF и карточка сайта остаются следующими этапами.")
 
 
 elif page == "Журнал импорта":

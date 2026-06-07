@@ -551,3 +551,35 @@ Next implementation stage after accepting 7D rules:
 ```text
 7E — Admin preview/audit of the public layer
 ```
+
+## 7E — Admin preview/audit публичного слоя
+
+7E adds a read-only Admin preview/audit for the future public layer:
+
+```text
+Цены → Index и просмотр → Публичный слой
+```
+
+7E applies the rules documented in `docs/PUBLIC_LAYER_RULES_V1.md` and separates stones into audit groups:
+
+```text
+Public OK — numeric price
+Public OK — price on request
+Ready but not published
+Hidden by status
+Hidden by availability_status
+Hidden by catalog_section
+Missing price
+Manual price review
+Data problems
+```
+
+7E is not publication and not export. It does not write CSV files, does not create backups, does not write to `exports/`, does not sync with the site, does not change `status`, `availability_status`, `catalog_section`, prices or `allow_price_on_request`, and does not create PDF/assets.
+
+The business logic is implemented as a portable read-only function:
+
+```text
+build_public_layer_preview()
+```
+
+Streamlit only displays the returned preview/audit tables.
