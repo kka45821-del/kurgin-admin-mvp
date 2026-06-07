@@ -595,3 +595,159 @@ photos/videos/gallery
 ```text
 docs/UNIFIED_KURGIN_REPORT_FOUNDATION_V1.md
 ```
+
+## 7D — Public Layer Rules
+
+7D is rules-only. Code, exports, sync, PDF generation, asset manager and CSV mutation are forbidden in this stage.
+
+### Public eligibility baseline
+
+A stone may enter the future public catalog layer only if:
+
+```text
+status = published
+availability_status = in_stock
+catalog_section is not empty
+catalog_section exists in catalog_sections.csv
+catalog_sections.is_public = true
+```
+
+If any condition is false, the stone is not public.
+
+### Status rules
+
+```text
+draft      → not public
+ready      → ready inside Admin, but not public
+published  → may continue public checks
+archived   → not public
+```
+
+### Availability rules
+
+```text
+in_stock  → may continue public checks
+reserved  → not public in V1
+sold      → not public
+removed   → not public
+```
+
+### Section rules
+
+```text
+catalog_section empty        → hidden by section
+catalog_section not found    → data problem
+is_public != true            → hidden by section
+is_public = true             → may continue public checks
+```
+
+### Price rules
+
+Price is part of the public stone card, but only as prepared public display.
+
+Allowed public price field:
+
+```text
+public_price_display
+```
+
+Forbidden public price/internal fields:
+
+```text
+supplier price
+internal price
+start price
+working price
+margin
+price_source
+price_fx_usd_rub
+price_calculated_at
+admin price metadata
+```
+
+Numeric public price is allowed only when:
+
+```text
+price_status = calculated
+public_price_display is filled
+public_price_total_rub is filled
+```
+
+“Цена по запросу” is allowed only when:
+
+```text
+price_status = missing_supplier_price
+allow_price_on_request = true
+public_price_display = Цена по запросу
+```
+
+If `price_status = missing_supplier_price` and `allow_price_on_request != true`, the stone must not enter the public commercial catalog.
+
+### Future public card summary
+
+```text
+shape
+carat / weight
+color
+clarity
+kurgin_score
+public_price_display
+min_diameter
+max_diameter
+height / depth_mm
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+```
+
+Required blockers for V1 public card:
+
+```text
+shape
+weight
+color
+clarity
+kurgin_score
+public_price_display
+```
+
+Warning-only fields for V1:
+
+```text
+min_diameter
+max_diameter
+height / depth_mm
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+```
+
+### Future public-layer audit groups
+
+```text
+Public OK — numeric price
+Public OK — price on request
+Ready but not published
+Hidden by status
+Hidden by availability_status
+Hidden by catalog_section
+Missing price
+Manual price review
+Data problems
+```
+
+Full rules are documented in:
+
+```text
+docs/PUBLIC_LAYER_RULES_V1.md
+```
+
+Next code stage must be separate:
+
+```text
+7E — Admin preview/audit of the public layer
+```

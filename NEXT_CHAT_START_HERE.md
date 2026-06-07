@@ -1,17 +1,18 @@
 # NEXT CHAT START HERE — KURGIN Admin
 
-Continue from stable checkpoint **26**.
+Continue from stable checkpoint **27**.
 
 ## Stable checkpoint
 
 ```text
-Checkpoint 26 — Stage 7D.0 Unified Report / PDF / Assets foundation
+Checkpoint 27 — Stage 7D Public Layer Rules
 ```
 
-## Previous stable base
+## Previous stable checkpoints
 
 ```text
 Checkpoint 25 — Stage 7C completed / rules locked
+Checkpoint 26 — Stage 7D.0 Unified Report / PDF / Assets foundation
 ```
 
 ## Current confirmed state
@@ -30,76 +31,82 @@ GitHub main contains 7C
 ## Stage 7D.0 status
 
 ```text
-docs-only foundation added
-no app.py changes
-no modules changes
-no data/schema changes
-no Streamlit UI changes
+Unified Report / PDF / Assets foundation documented
+ReportPayloadV1 future contract documented
+ReportMode values documented
+Catalog Stone Card future contract documented
+PriceVisibilityContext future rule documented
 no PDF generator
 no asset manager
 no export/sync
 ```
 
-## Unified report principle
+## Stage 7D status
 
 ```text
-one shared ReportPayloadV1
-one future unified KURGIN Report / PDF generator
-multiple ReportMode values
-mode-specific visibility rules
+public-layer rules documented
+no app.py changes
+no modules changes
+no data/schema changes
+no Streamlit UI changes
+no exports
+no sync
 ```
 
-## ReportMode values
+## Public eligibility baseline
+
+A stone may enter the future public catalog layer only if:
 
 ```text
-internal_admin
-private_analyzer
-public_stone_analyzer
-mass_analyzer_row
-catalog_stone_card
+status = published
+availability_status = in_stock
+catalog_section is filled
+catalog_section exists in catalog_sections.csv
+catalog_sections.is_public = true
 ```
 
-## Future catalog card summary
+## Price rule
+
+Price is part of the public stone card. The public layer may show only prepared:
+
+```text
+public_price_display
+```
+
+Numeric price requires:
+
+```text
+price_status = calculated
+public_price_display is filled
+public_price_total_rub is filled
+```
+
+“Цена по запросу” requires:
+
+```text
+price_status = missing_supplier_price
+allow_price_on_request = true
+public_price_display = Цена по запросу
+```
+
+## Future public card summary
 
 ```text
 shape
-carat
+carat / weight
 color
 clarity
 kurgin_score
 public_price_display
 min_diameter
 max_diameter
-height
+height / depth_mm
 cut_grade
 symmetry
 polish
 fluorescence
 tags
 ```
-
-Price is part of the future public card summary only as prepared public display. The card/site/PDF generator must not calculate price.
-
-Detail card may later show the same card, more details, KURGIN Analyzer PDF/report, lab report, photos/videos/assets.
-
-
-## Future price visibility contexts
-
-Keep `ReportMode` separate from `PriceVisibilityContext`.
-
-Future contexts:
-
-```text
-internal_admin
-specialist_private
-specialist_client_view
-public_catalog
-public_analyzer
-```
-
-`specialist_private` and `specialist_client_view` may show different prepared price displays in future. Client view must not reveal specialist margin, specialist purchase price, supplier price, internal price, working price or admin price metadata.
-
-V1 does not implement specialist pricing, price tiers or account-specific price calculation.
 
 ## Do not do without separate approval
 
@@ -110,26 +117,30 @@ Do not upload/link real assets.
 Do not activate stone_assets.csv.
 Do not change stones_master.csv schema for assets.
 Do not create kurgin-report-core yet.
-Do not start public-layer code before rules are agreed.
+Do not write public export files.
+Do not sync to site.
+Do not mutate stones_master.csv in public-layer audit.
 Do not install old draft 7D ZIPs.
 ```
 
-## Next discussion
+## Next recommended stage
 
-Discuss **Stage 7D — public layer rules** only:
+Discuss and then implement only after approval:
 
 ```text
-what publication means
-which stones enter public layer
-which stones are excluded
-how status is handled
-how availability_status is handled
-how catalog_section and is_public are handled
-how allow_price_on_request is handled
-how price_status and public_price_display are handled
-which catalog card fields are public-safe
-what is summary_view vs detail_view
-what exactly is exported later
+7E — Admin preview/audit of the public layer
 ```
 
-Only after these rules are confirmed should any 7D code ZIP be created.
+7E should be read-only:
+
+```text
+read stones_master.csv
+read catalog_sections.csv
+apply Stage 7D rules
+show groups and reasons in Admin
+allow download of preview from memory
+no CSV mutation
+no exports/ writes
+no backup creation
+no site sync
+```

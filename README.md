@@ -496,3 +496,58 @@ specialist_client_view должен быть клиентским безопас
 V1 не реализует specialist pricing, price tiers или кабинеты. Это только future visibility rule.
 ```
 
+## 7D — Public Layer Rules
+
+7D is a documentation-only stage. It defines which stones may later be shown outside Admin and in what form.
+
+No code, export, sync, PDF generation, asset manager or CSV mutation is added in 7D.
+
+Public eligibility baseline:
+
+```text
+status = published
+availability_status = in_stock
+catalog_section is filled
+catalog_section exists in catalog_sections.csv
+catalog_sections.is_public = true
+```
+
+Price is part of the future public stone card. The public layer may show only prepared `public_price_display`:
+
+```text
+numeric price: price_status = calculated and public_price_display is filled
+Цена по запросу: price_status = missing_supplier_price and allow_price_on_request = true
+```
+
+The card/site/PDF generator must not calculate price and must not expose supplier/internal/start/working prices, margins, `price_source`, FX metadata, admin notes or formula internals.
+
+Future public card summary:
+
+```text
+shape
+carat / weight
+color
+clarity
+kurgin_score
+public_price_display
+min_diameter
+max_diameter
+height / depth_mm
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+```
+
+Detailed rules are documented in:
+
+```text
+docs/PUBLIC_LAYER_RULES_V1.md
+```
+
+Next implementation stage after accepting 7D rules:
+
+```text
+7E — Admin preview/audit of the public layer
+```
