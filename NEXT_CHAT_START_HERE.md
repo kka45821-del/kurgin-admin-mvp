@@ -67,6 +67,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -77,7 +78,28 @@ fluorescence
 tags
 ```
 
+Price is part of the future public card summary only as prepared public display. The card/site/PDF generator must not calculate price.
+
 Detail card may later show the same card, more details, KURGIN Analyzer PDF/report, lab report, photos/videos/assets.
+
+
+## Future price visibility contexts
+
+Keep `ReportMode` separate from `PriceVisibilityContext`.
+
+Future contexts:
+
+```text
+internal_admin
+specialist_private
+specialist_client_view
+public_catalog
+public_analyzer
+```
+
+`specialist_private` and `specialist_client_view` may show different prepared price displays in future. Client view must not reveal specialist margin, specialist purchase price, supplier price, internal price, working price or admin price metadata.
+
+V1 does not implement specialist pricing, price tiers or account-specific price calculation.
 
 ## Do not do without separate approval
 

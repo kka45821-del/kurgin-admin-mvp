@@ -454,6 +454,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -463,6 +464,8 @@ polish
 fluorescence
 tags
 ```
+
+Цена является частью будущей публичной карточки, но только как готовое публичное отображение. Карточка не считает цену.
 
 Детальная карточка после клика может показывать:
 
@@ -475,6 +478,41 @@ lab report reference
 ```
 
 Карточка камня не генерирует PDF. PDF generator не генерирует карточку. Оба будущих слоя используют общий `ReportPayloadV1` и visibility rules.
+
+
+### Price visibility contexts — future-only
+
+`ReportMode` не должен смешиваться с ценовыми правами. Для будущих кабинетов и публичного сайта нужно отдельно держать `PriceVisibilityContext`.
+
+Канонические будущие контексты:
+
+```text
+internal_admin
+specialist_private
+specialist_client_view
+public_catalog
+public_analyzer
+```
+
+Правила:
+
+```text
+public_catalog показывает только public_price_display или разрешённую “Цена по запросу”.
+specialist_private может иметь будущую профессиональную цену, но не обязан видеть supplier/internal Admin cost.
+specialist_client_view является клиентским безопасным режимом и не должен раскрывать specialist margin, specialist purchase price, supplier price, internal price, working price или admin price metadata.
+public_analyzer обычно не показывает цену каталога, если анализируемый камень явно не связан с публичной карточкой.
+PDF generator, карточка и сайт не считают цены. Все price display должны приходить из Admin/export price policy.
+```
+
+В V1 не реализуются:
+
+```text
+specialist pricing
+price tiers
+account-specific price calculation
+specialist cabinet
+client-view cabinet
+```
 
 ### PDF generator — запреты
 

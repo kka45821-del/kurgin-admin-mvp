@@ -265,7 +265,9 @@ catalog_section
 status
 ```
 
-Commercial display is optional for card/report modes. Price is not required for the identity of the stone card.
+For the catalog stone card, price is part of the public commercial display. The card must display only a prepared public value such as `public_price_display` or an approved “Цена по запросу” state. The card, report and PDF generator do not calculate price.
+
+Future specialist accounts may require different price displays by viewer context. Those contexts are policy decisions outside the PDF generator and outside the card UI.
 
 ### 5.9 catalog_card_summary
 
@@ -277,6 +279,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -286,6 +289,8 @@ polish
 fluorescence
 tags
 ```
+
+Price is visible in the public card summary, but only as a prepared public display value. Raw/internal price fields are not public card fields.
 
 This block is public-safe by default, subject to visibility policy.
 
@@ -480,6 +485,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -496,6 +502,7 @@ Detail view may show:
 summary fields
 additional public-safe certificate/geometry fields
 public-safe interpretation
+public commercial display when allowed
 future KURGIN Report PDF reference
 future lab report reference
 future photos/videos/assets
@@ -540,6 +547,7 @@ public warning
 data completeness
 report quality status
 public_price_display if commercial context allows it
+Цена по запросу only when allow_price_on_request is explicitly true
 ```
 
 Internal-only by default:
@@ -554,7 +562,49 @@ private API details
 supplier cost internals
 internal margin logic
 admin-only comments
+specialist purchase price unless viewer context allows it
+specialist margin
+price policy internals
 ```
+
+### 7.1 PriceVisibilityContext — future-only
+
+`PriceVisibilityContext` is separate from `ReportMode`.
+
+`ReportMode` defines what kind of report/card is being rendered. `PriceVisibilityContext` defines which prepared price display is allowed for the current viewer.
+
+Future canonical contexts:
+
+```text
+internal_admin
+specialist_private
+specialist_client_view
+public_catalog
+public_analyzer
+```
+
+Rules:
+
+```text
+internal_admin may see full admin price layers when authorized.
+specialist_private may see future professional/specialist price displays, but not necessarily supplier/internal Admin cost.
+specialist_client_view must be customer-safe and must not expose specialist margin, specialist purchase price, supplier price, internal price, working price or admin price metadata.
+public_catalog may show only public_price_display or approved Цена по запросу.
+public_analyzer usually should not show catalog price unless the analyzed stone is explicitly linked to a public catalog item.
+```
+
+Future-only reserved concepts:
+
+```text
+price_visibility_context
+display_price_for_current_context
+specialist_price_display
+specialist_client_price_display
+price_tier
+price_policy_id
+```
+
+V1 does not implement specialist pricing, price tiers or account-specific price calculation. It only reserves the rule that different viewer contexts may receive different prepared price displays.
 
 ## 8. PDF generator rules
 

@@ -4,7 +4,7 @@ Stable base: **Checkpoint 25 — Stage 7C completed / rules locked**
 
 ## What changed
 
-Stage 7D.0 added a docs-only foundation for a future unified KURGIN Report / PDF / Assets system.
+Stage 7D.0 added a docs-only foundation for a future unified KURGIN Report / PDF / Assets system. It was later clarified that public catalog cards include price display and that future specialist/client views require separate price visibility contexts.
 
 No application code changed.
 
@@ -35,6 +35,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -45,7 +46,24 @@ fluorescence
 tags
 ```
 
+Price is part of the public card summary only as prepared public display. Raw/internal price fields are not public.
+
 Detail card may later show expanded public-safe data, KURGIN Analyzer Report PDF/reference, lab report, photos/videos/assets.
+
+
+## Future price visibility contexts
+
+```text
+internal_admin
+specialist_private
+specialist_client_view
+public_catalog
+public_analyzer
+```
+
+These contexts are future-only in V1. They reserve the rule that a specialist's private cabinet and a specialist's client-facing view may show different prepared price displays.
+
+Do not implement specialist pricing, price tiers or account-specific price calculation in this checkpoint.
 
 ## V1 boundary
 

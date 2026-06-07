@@ -455,6 +455,7 @@ carat
 color
 clarity
 kurgin_score
+public_price_display
 min_diameter
 max_diameter
 height
@@ -464,6 +465,8 @@ polish
 fluorescence
 tags
 ```
+
+Цена входит в публичную карточку, но только как готовое публичное отображение `public_price_display` или разрешённая “Цена по запросу”. Карточка, сайт и будущий PDF generator не считают цену.
 
 При клике детальная карточка сможет показывать эту же карточку, расширенные данные, будущий KURGIN Analyzer Report PDF, lab report, фото/видео/assets. В 7D.0 это только контракт на будущее, не реализация.
 
@@ -483,3 +486,13 @@ stones_master.csv не меняется
 ```text
 docs/UNIFIED_KURGIN_REPORT_FOUNDATION_V1.md
 ```
+
+Дополнение 7D.0 по будущим кабинетам специалиста:
+
+```text
+ReportMode и PriceVisibilityContext разделены.
+internal_admin, specialist_private, specialist_client_view, public_catalog и public_analyzer могут иметь разные разрешённые price display.
+specialist_client_view должен быть клиентским безопасным режимом и не должен раскрывать specialist margin, specialist purchase price, supplier price, internal price, working price или admin price metadata.
+V1 не реализует specialist pricing, price tiers или кабинеты. Это только future visibility rule.
+```
+
