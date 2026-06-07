@@ -33,7 +33,7 @@ def ensure_data_files() -> None:
 def read_csv_safe(path: Path, columns: list[str]) -> pd.DataFrame:
     ensure_csv(path, columns)
     try:
-        df = pd.read_csv(path, dtype=str).fillna("")
+        df = pd.read_csv(path, dtype=str, keep_default_na=False).fillna("")
     except Exception:
         df = pd.DataFrame(columns=columns)
     for col in columns:
@@ -349,6 +349,54 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+SCORE_RANGE_DEFAULTS = {
+    "poor": {"min": "", "max": "60", "label": "<60"},
+    "fair": {"min": "60", "max": "70", "label": "60–69.99"},
+    "standard": {"min": "70", "max": "80", "label": "70–79.99"},
+    "high": {"min": "80", "max": "90", "label": "80–89.99"},
+    "premium": {"min": "90", "max": "95", "label": "90–94.99"},
+    "elite": {"min": "95", "max": "", "label": "95+"},
+    "not_calculated": {"min": "", "max": "", "label": "Не рассчитано"},
+}
+
+
+def _score_range_defaults_for_key(score_key: str) -> dict:
+    return SCORE_RANGE_DEFAULTS.get(str(score_key).strip(), {"min": "", "max": "", "label": ""})
+
+
+def _apply_score_range_defaults(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().fillna("")
+    for col in PRICE_SCORE_COEFFICIENTS_COLUMNS:
+        if col not in out.columns:
+            out[col] = ""
+    for idx, row in out.iterrows():
+        score_key = str(row.get("score_key", "")).strip()
+        defaults = _score_range_defaults_for_key(score_key)
+        if not str(out.at[idx, "score_min_inclusive"]).strip():
+            out.at[idx, "score_min_inclusive"] = defaults.get("min", "")
+        if not str(out.at[idx, "score_max_exclusive"]).strip():
+            out.at[idx, "score_max_exclusive"] = defaults.get("max", "")
+        if not str(out.at[idx, "score_range_label"]).strip():
+            out.at[idx, "score_range_label"] = defaults.get("label", "")
+    return out[PRICE_SCORE_COEFFICIENTS_COLUMNS + [c for c in out.columns if c not in PRICE_SCORE_COEFFICIENTS_COLUMNS]]
+
+
+def _score_range_label_for_key(score_key: str) -> str:
+    return _score_range_defaults_for_key(score_key).get("label", "")
+
+
+def _score_range_label_for_stone(row: dict) -> str:
+    score_key, _warning = _score_key_from_stone(row)
+    return _score_range_label_for_key(score_key)
+
+
+def _normalize_fluorescence_display(value) -> str:
+    text = str(value).strip() if value is not None else ""
+    if text.lower() in {"", "nan", "none", "<na>"}:
+        return "None"
+    return text
+
+
 def ensure_price_files() -> None:
     ensure_dirs()
 
@@ -406,13 +454,13 @@ def ensure_price_files() -> None:
 
     if not PRICE_SCORE_COEFFICIENTS_FILE.exists():
         pd.DataFrame([
-            {"score_key": "poor", "score_name_ru": "Низкое качество", "coefficient": "0.90", "sort_order": "1", "comment": "", "updated_at": ""},
-            {"score_key": "fair", "score_name_ru": "Среднее качество", "coefficient": "0.95", "sort_order": "2", "comment": "", "updated_at": ""},
-            {"score_key": "standard", "score_name_ru": "Стандартный", "coefficient": "1.00", "sort_order": "3", "comment": "", "updated_at": ""},
-            {"score_key": "high", "score_name_ru": "Высокое качество", "coefficient": "1.05", "sort_order": "4", "comment": "", "updated_at": ""},
-            {"score_key": "premium", "score_name_ru": "Премиальный", "coefficient": "1.10", "sort_order": "5", "comment": "", "updated_at": ""},
-            {"score_key": "elite", "score_name_ru": "Элитный", "coefficient": "1.15", "sort_order": "6", "comment": "", "updated_at": ""},
-            {"score_key": "not_calculated", "score_name_ru": "Не рассчитано", "coefficient": "1.00", "sort_order": "7", "comment": "", "updated_at": ""},
+            {"score_key": "poor", "score_name_ru": "Низкое качество", "score_min_inclusive": "", "score_max_exclusive": "60", "score_range_label": "<60", "coefficient": "0.90", "sort_order": "1", "comment": "", "updated_at": ""},
+            {"score_key": "fair", "score_name_ru": "Среднее качество", "score_min_inclusive": "60", "score_max_exclusive": "70", "score_range_label": "60–69.99", "coefficient": "0.95", "sort_order": "2", "comment": "", "updated_at": ""},
+            {"score_key": "standard", "score_name_ru": "Стандартный", "score_min_inclusive": "70", "score_max_exclusive": "80", "score_range_label": "70–79.99", "coefficient": "1.00", "sort_order": "3", "comment": "", "updated_at": ""},
+            {"score_key": "high", "score_name_ru": "Высокое качество", "score_min_inclusive": "80", "score_max_exclusive": "90", "score_range_label": "80–89.99", "coefficient": "1.05", "sort_order": "4", "comment": "", "updated_at": ""},
+            {"score_key": "premium", "score_name_ru": "Премиальный", "score_min_inclusive": "90", "score_max_exclusive": "95", "score_range_label": "90–94.99", "coefficient": "1.10", "sort_order": "5", "comment": "", "updated_at": ""},
+            {"score_key": "elite", "score_name_ru": "Элитный", "score_min_inclusive": "95", "score_max_exclusive": "", "score_range_label": "95+", "coefficient": "1.15", "sort_order": "6", "comment": "", "updated_at": ""},
+            {"score_key": "not_calculated", "score_name_ru": "Не рассчитано", "score_min_inclusive": "", "score_max_exclusive": "", "score_range_label": "Не рассчитано", "coefficient": "1.00", "sort_order": "7", "comment": "", "updated_at": ""},
         ], columns=PRICE_SCORE_COEFFICIENTS_COLUMNS).to_csv(PRICE_SCORE_COEFFICIENTS_FILE, index=False)
 
     if not CURRENCY_RATES_FILE.exists():
@@ -440,7 +488,7 @@ def read_price_margins() -> pd.DataFrame:
 
 def read_price_score_coefficients() -> pd.DataFrame:
     ensure_price_files()
-    return read_csv_safe(PRICE_SCORE_COEFFICIENTS_FILE, PRICE_SCORE_COEFFICIENTS_COLUMNS)
+    return _apply_score_range_defaults(read_csv_safe(PRICE_SCORE_COEFFICIENTS_FILE, PRICE_SCORE_COEFFICIENTS_COLUMNS))
 
 
 def read_currency_rates() -> pd.DataFrame:
@@ -485,7 +533,9 @@ def update_price_margins(df: pd.DataFrame) -> dict:
 def update_price_score_coefficients(df: pd.DataFrame) -> dict:
     ensure_data_files()
     backup_dir = backup_existing_files("before_update_price_score_coefficients")
-    atomic_write_csv(_prepare_price_df(df, PRICE_SCORE_COEFFICIENTS_COLUMNS), PRICE_SCORE_COEFFICIENTS_FILE)
+    out = _prepare_price_df(df, PRICE_SCORE_COEFFICIENTS_COLUMNS)
+    out = _apply_score_range_defaults(out)
+    atomic_write_csv(out[PRICE_SCORE_COEFFICIENTS_COLUMNS], PRICE_SCORE_COEFFICIENTS_FILE)
     return {"updated": True, "backup_dir": str(backup_dir)}
 
 
@@ -665,9 +715,11 @@ def calculate_index_table(score_key: str = "standard", currency: str = "RUB") ->
     score_match = score_df[score_df["score_key"].astype(str) == str(score_key)]
     coefficient = 1.0
     score_name = "Стандартный"
+    score_range_label = _score_range_label_for_key(score_key)
     if not score_match.empty:
         coefficient = _float_value(score_match.iloc[0].get("coefficient", "1"), 1.0)
         score_name = str(score_match.iloc[0].get("score_name_ru", "Стандартный"))
+        score_range_label = str(score_match.iloc[0].get("score_range_label", score_range_label))
     multiplier = _currency_multiplier(currency)
     public_index = str(currency).upper() == "RUB"
     rows = []
@@ -680,6 +732,7 @@ def calculate_index_table(score_key: str = "standard", currency: str = "RUB") ->
                 "clarity": row.get("clarity", ""),
                 "score_key": score_key,
                 "score_name_ru": score_name,
+                "score_range_label": score_range_label,
                 "score_coefficient": coefficient,
                 "currency": str(currency).upper(),
                 "public_price_per_ct_usd": "",
@@ -698,6 +751,7 @@ def calculate_index_table(score_key: str = "standard", currency: str = "RUB") ->
             "clarity": row.get("clarity", ""),
             "score_key": score_key,
             "score_name_ru": score_name,
+            "score_range_label": score_range_label,
             "score_coefficient": coefficient,
             "currency": str(currency).upper(),
             "public_price_per_ct_usd": round(public_usd, 2),
@@ -791,6 +845,7 @@ def _score_coefficients_lookup() -> dict:
         key = str(row.get("score_key", ""))
         lookup[key] = {
             "name": str(row.get("score_name_ru", key)),
+            "range": str(row.get("score_range_label", _score_range_label_for_key(key))),
             "coefficient": _float_value(row.get("coefficient", "1"), 1.0),
         }
     return lookup
@@ -869,7 +924,9 @@ def calculate_stone_margin_view(currency: str = "RUB") -> pd.DataFrame:
         score_key, warning = _score_key_from_stone(stone_dict)
         score_info = score_lookup.get(score_key, {"name": "Не рассчитано", "coefficient": 1.0})
         score_coeff = score_info.get("coefficient", 1.0)
-        score_label = f"{score_info.get('name', score_key)} ×{score_coeff}"
+        score_range = score_info.get("range", _score_range_label_for_key(score_key))
+        score_range_part = f" ({score_range})" if score_range else ""
+        score_label = f"{score_info.get('name', score_key)}{score_range_part} ×{score_coeff}"
 
         supplier_stone_usd = _float_value(price_row.get("supplier_price_per_ct_usd", 0)) * weight
         internal_stone_usd = _float_value(price_row.get("internal_price_per_ct_usd", 0)) * weight
@@ -1424,6 +1481,7 @@ PUBLIC_PREVIEW_COLUMNS = [
     "color",
     "clarity",
     "kurgin_score",
+    "kurgin_score_range",
     "public_price_display",
     "price_status_public",
     "availability_status_public",
@@ -1472,7 +1530,11 @@ def _missing_fields(row: dict, fields: list[str]) -> list[str]:
     for field in fields:
         if field not in row:
             continue
-        if not _has_text(row.get(field, "")):
+        if field == "fluorescence":
+            value = _normalize_fluorescence_display(row.get(field, ""))
+        else:
+            value = row.get(field, "")
+        if not _has_text(value):
             missing.append(field)
     return missing
 
@@ -1519,6 +1581,7 @@ def _build_public_preview_row(row: dict, section_info: dict, price_kind: str, re
         "color": row.get("color", ""),
         "clarity": row.get("clarity", ""),
         "kurgin_score": row.get("kurgin_score", ""),
+        "kurgin_score_range": _score_range_label_for_stone(row),
         "public_price_display": row.get("public_price_display", ""),
         "price_status_public": price_kind,
         "availability_status_public": row.get("availability_status", ""),
@@ -1530,7 +1593,7 @@ def _build_public_preview_row(row: dict, section_info: dict, price_kind: str, re
         "cut_grade": row.get("cut", ""),
         "symmetry": row.get("symmetry", ""),
         "polish": row.get("polish", ""),
-        "fluorescence": row.get("fluorescence", ""),
+        "fluorescence": _normalize_fluorescence_display(row.get("fluorescence", "")),
         "public_card_status": "public_candidate",
         "public_visibility_reason": reason,
     }
@@ -1649,6 +1712,7 @@ def build_public_layer_preview() -> dict:
             "Цвет": row.get("color", ""),
             "Чистота": row.get("clarity", ""),
             "KURGIN Score": row.get("kurgin_score", ""),
+            "Диапазон KURGIN Score": _score_range_label_for_stone(row),
             "Цена": row.get("public_price_display", ""),
             "status": status,
             "availability_status": availability,
@@ -1664,7 +1728,7 @@ def build_public_layer_preview() -> dict:
             "cut": row.get("cut", ""),
             "symmetry": row.get("symmetry", ""),
             "polish": row.get("polish", ""),
-            "fluorescence": row.get("fluorescence", ""),
+            "fluorescence": _normalize_fluorescence_display(row.get("fluorescence", "")),
         }
         audit_rows.append(audit_item)
 

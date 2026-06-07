@@ -819,3 +819,50 @@ app.py → display only
 ```text
 7F / 8A — export/public card schema
 ```
+
+## 7E.1 — Public layer UI fixes
+
+7E.1 is a small UI/data-clarity fix after testing 7E.
+
+Allowed in 7E.1:
+
+```text
+show recorded KURGIN Score ranges in the coefficient table
+show KURGIN Score ranges in Index labels and technical Index table
+show KURGIN Score ranges in public-layer audit
+separate KURGIN Score coefficients and currency rates into separate top-level price navigation buttons
+render empty/none-like fluorescence values as None
+```
+
+KURGIN Score ranges for V1:
+
+```text
+poor            <60
+fair            60–69.99
+standard        70–79.99
+high            80–89.99
+premium         90–94.99
+elite           95+
+not_calculated  Не рассчитано
+```
+
+Fluorescence rule:
+
+```text
+None is a real fluorescence value.
+If fluorescence is blank or none-like in display/audit, show None, not an empty cell.
+```
+
+Forbidden in 7E.1:
+
+```text
+change price formulas
+recalculate or write final prices
+write exports
+create backups as part of audit
+change stones_master.csv from the public-layer page
+change status / availability_status / catalog_section
+turn on allow_price_on_request
+publish or sync stones
+create PDF/assets
+```

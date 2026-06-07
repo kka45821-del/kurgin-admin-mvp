@@ -583,3 +583,22 @@ build_public_layer_preview()
 ```
 
 Streamlit only displays the returned preview/audit tables.
+
+## 7E.1 — Public layer UI fixes
+
+7E.1 keeps the public-layer audit read-only and adds UI/data clarity:
+
+- KURGIN Score coefficient settings now show recorded score ranges:
+  - poor: `<60`
+  - fair: `60–69.99`
+  - standard: `70–79.99`
+  - high: `80–89.99`
+  - premium: `90–94.99`
+  - elite: `95+`
+  - not_calculated: `Не рассчитано`
+- KURGIN Score ranges are shown in Index labels and the full Index technical table.
+- Public-layer audit includes `Диапазон KURGIN Score`.
+- Fluorescence displays `None` when fluorescence is empty/none-like, because `None` is a real fluorescence value alongside Faint / Medium / Strong.
+- Price navigation separates KURGIN Score coefficients and currency rates into separate top-level buttons.
+
+7E.1 does not change prices, does not write public exports, does not publish stones, does not sync with the site and does not generate PDFs.

@@ -154,6 +154,9 @@ PRICE_MARGINS_COLUMNS = [
 PRICE_SCORE_COEFFICIENTS_COLUMNS = [
     "score_key",
     "score_name_ru",
+    "score_min_inclusive",
+    "score_max_exclusive",
+    "score_range_label",
     "coefficient",
     "sort_order",
     "comment",

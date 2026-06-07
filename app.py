@@ -38,6 +38,13 @@ SCORE_LABELS = {"calculated": "Рассчитан", "not_available_for_shape": "
 NUMERIC_COLUMNS = ["weight", "kurgin_score", "min_diameter", "max_diameter", "depth_mm"]
 
 
+def display_fluorescence(value) -> str:
+    text = str(value).strip() if value is not None else ""
+    if text.lower() in {"", "nan", "none", "<na>"}:
+        return "None"
+    return text
+
+
 def labelize(df):
     if df.empty:
         return df
@@ -45,6 +52,9 @@ def labelize(df):
     for col in NUMERIC_COLUMNS:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce")
+    if "fluorescence" in view.columns:
+        view["fluorescence"] = view["fluorescence"].map(display_fluorescence)
+
     for col, mapping in [
         ("status", STATUS_LABELS),
         ("availability_status", AVAIL_LABELS),
@@ -135,7 +145,7 @@ def stone_card(stones: pd.DataFrame, selected_id: str):
         st.write(f"Cut: {row.get('cut', '')}")
         st.write(f"Polish: {row.get('polish', '')}")
         st.write(f"Symmetry: {row.get('symmetry', '')}")
-        st.write(f"Fluorescence: {row.get('fluorescence', '')}")
+        st.write(f"Fluorescence: {display_fluorescence(row.get('fluorescence', ''))}")
     with b:
         st.write("**Размеры**")
         st.write(f"Measurements: {row.get('measurements', '')}")
@@ -822,8 +832,10 @@ elif page == "Цены":
             "Рабочая цена за карат",
             "Публичная цена за карат",
         ],
-        "Коэффициенты и валюты": [
+        "KURGIN Score": [
             "KURGIN Score",
+        ],
+        "Курсы валют": [
             "Курсы валют",
         ],
         "Index и просмотр": [
@@ -841,12 +853,15 @@ elif page == "Цены":
         key="price_nav_group",
     )
 
-    price_page_selected = st.radio(
-        "Страница",
-        price_groups[selected_price_group],
-        horizontal=True,
-        key=f"price_nav_page_{selected_price_group}",
-    )
+    if len(price_groups[selected_price_group]) == 1:
+        price_page_selected = price_groups[selected_price_group][0]
+    else:
+        price_page_selected = st.radio(
+            "Страница",
+            price_groups[selected_price_group],
+            horizontal=True,
+            key=f"price_nav_page_{selected_price_group}",
+        )
 
     if price_page_selected == "Цена поставщика за карат":
         st.subheader("Цена поставщика за карат")
@@ -1152,16 +1167,19 @@ elif page == "Цены":
 
     if price_page_selected == "KURGIN Score":
         st.subheader("Коэффициенты KURGIN Score")
-        st.caption("Коэффициент применяется к стартовой, рабочей, публичной и индексной цене. Для не ROUND — 1.00.")
+        st.caption("Коэффициент применяется к стартовой, рабочей, публичной и индексной цене. Диапазоны KURGIN Score записаны в таблице и не редактируются здесь. Для не ROUND — 1.00.")
         score_df = read_price_score_coefficients()
         score_edit = st.data_editor(
             score_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["score_key", "updated_at"],
+            disabled=["score_key", "score_min_inclusive", "score_max_exclusive", "score_range_label", "updated_at"],
             column_config={
                 "score_key": st.column_config.TextColumn("Ключ"),
                 "score_name_ru": st.column_config.TextColumn("Название"),
+                "score_min_inclusive": st.column_config.TextColumn("Min включительно"),
+                "score_max_exclusive": st.column_config.TextColumn("Max не включительно"),
+                "score_range_label": st.column_config.TextColumn("Диапазон KURGIN Score"),
                 "coefficient": st.column_config.NumberColumn("Коэффициент", min_value=0.0, step=0.01, format="%.4f"),
                 "sort_order": st.column_config.NumberColumn("Порядок", min_value=1, step=1),
                 "formula": st.column_config.TextColumn("Формула"),
@@ -1215,7 +1233,9 @@ elif page == "Цены":
             key = str(row.get("score_key", ""))
             name = str(row.get("score_name_ru", key))
             coeff = row.get("coefficient", "1.00")
-            label = f"{name} ×{coeff}"
+            score_range = str(row.get("score_range_label", "")).strip()
+            score_range_part = f" ({score_range})" if score_range else ""
+            label = f"{name}{score_range_part} ×{coeff}"
             score_options.append(label)
             score_labels[label] = key
 
@@ -1261,6 +1281,7 @@ elif page == "Цены":
                         "color",
                         "clarity",
                         "score_name_ru",
+                        "score_range_label",
                         "score_coefficient",
                         "currency",
                         "public_price_per_ct_usd",
@@ -1547,7 +1568,7 @@ elif page == "Цены":
 
             audit_columns = [
                 "Группа", "Контроль", "Причина", "Проблемы", "Предупреждения", "Public candidate",
-                "ID", "Report #", "Lab", "Форма", "Карат", "Цвет", "Чистота", "KURGIN Score", "Цена",
+                "ID", "Report #", "Lab", "Форма", "Карат", "Цвет", "Чистота", "KURGIN Score", "Диапазон KURGIN Score", "Цена",
                 "status", "availability_status", "catalog_section", "section_name", "section_is_public",
                 "price_status", "price_source", "allow_price_on_request",
                 "min_diameter", "max_diameter", "depth_mm", "cut", "symmetry", "polish", "fluorescence",
