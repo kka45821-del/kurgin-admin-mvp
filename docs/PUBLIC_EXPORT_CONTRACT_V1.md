@@ -379,3 +379,30 @@ not write kurgin-data
 not sync with site
 not mutate stones_master.csv
 ```
+
+## 13. Stage 7F implementation boundary
+
+7F implements only an Admin in-memory preview/download for this contract.
+
+Allowed in 7F:
+
+```text
+build public_stones_v1.csv preview from 7E public-layer preview
+download public_stones_v1.csv through the Admin UI
+return headers-only CSV when there are no public candidates
+```
+
+Forbidden in 7F:
+
+```text
+write exports/
+write kurgin-data
+sync with public site
+mutate stones_master.csv
+mutate catalog_sections.csv
+change status / availability / section / prices
+create PDF/assets
+```
+
+The 7F implementation is still not a publish/sync stage. A controlled publish path remains a later stage.
+

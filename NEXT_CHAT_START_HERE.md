@@ -3,7 +3,7 @@
 Stable checkpoint:
 
 ```text
-Checkpoint 30 — Stage 7F.0 Public Export / Public Card Schema Contract
+Checkpoint 31 — Stage 7F Public Export Preview/Download
 ```
 
 Previous checkpoints:
@@ -14,6 +14,7 @@ Checkpoint 26 — Stage 7D.0 Unified Report / PDF / Assets foundation
 Checkpoint 27 — Stage 7D Public Layer Rules
 Checkpoint 28 — Stage 7E Public Layer Preview/Audit
 Checkpoint 29 — Stage 7E.1 Public Layer UI Fixes
+Checkpoint 30 — Stage 7F.0 Public Export / Public Card Schema Contract
 ```
 
 ## Current state
@@ -24,71 +25,63 @@ Checkpoint 29 — Stage 7E.1 Public Layer UI Fixes
 7E adds read-only Admin preview/audit of the future public layer.
 7E.1 fixes KURGIN Score range visibility, price navigation and fluorescence display.
 7F.0 documents the future public export / public card schema contract.
+7F implements Admin in-memory public_stones_v1.csv preview/download.
 ```
 
-## 7F.0 locked decisions
+## 7F behavior
+
+Location:
 
 ```text
-Canonical future export file: public_stones_v1.csv
-Do not silently replace legacy/current stones.csv.
-Public site displays only prepared public_price_display.
-Public site does not calculate price.
-PDF generator does not calculate price.
-Export must not include internal/admin/formula fields.
-7F.0 does not write exports, kurgin-data, site sync, PDF/assets or CSV data.
+Цены → Index и просмотр → Публичный слой
 ```
 
-## Public export boundary
-
-Allowed public export rows later:
+7F adds:
 
 ```text
-public_numeric_price
-public_price_on_request
+Public export preview — public_stones_v1.csv
 ```
 
-Forbidden as public export rows:
+It:
 
 ```text
-not_public
-data_problem
-hidden_by_status
-hidden_by_availability_status
-hidden_by_catalog_section
-missing_price
-ready_but_not_published
+builds export rows only from 7E public candidates
+shows only public-safe fields
+allows download through Streamlit download_button
+returns headers-only CSV when public candidates = 0
 ```
 
-## Important constraints
+It does not:
 
 ```text
-Do not write exports yet.
-Do not write kurgin-data yet.
-Do not publish/sync stones yet.
-Do not create PDF/assets yet.
-Do not change stones_master.csv from public-layer/export preview.
-Do not change status / availability_status / catalog_section from public-layer/export preview.
-Do not turn on allow_price_on_request from public-layer/export preview.
+write exports/
+write kurgin-data
+sync with public site
+change stones_master.csv
+change catalog_sections.csv
+change status / availability / section / prices
+turn on allow_price_on_request
+create backups
+create PDF/assets
+create orders/reserves/payments
+```
+
+## Important V1 limitation
+
+```text
+Streamlit Cloud runtime data may reset after redeploy/reboot.
+Do not deeply fix persistence in V1.
+V2 database should become source of truth.
 ```
 
 ## Next reasonable topic
 
-Discuss 7F implementation rules before code:
+Discuss next stage rules before code.
+
+Likely topic:
 
 ```text
-7F — Admin in-memory public export preview/download
+8A — controlled publish path to kurgin-data
 ```
 
-7F should:
-
-```text
-read public-layer preview
-build public_stones_v1.csv in memory
-show/download public-safe rows
-not write exports/
-not write kurgin-data
-not sync with site
-not mutate stones_master.csv
-```
-
-Do not start 7F code until rules are confirmed.
+Do not start 8A code until rules are confirmed.

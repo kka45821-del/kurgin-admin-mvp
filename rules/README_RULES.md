@@ -1067,3 +1067,87 @@ Next implementation stage must be separate:
 ```
 
 7F must still be safe: build downloadable public export from memory only, without writing `exports/`, without writing `kurgin-data`, without sync and without mutating `stones_master.csv`.
+
+## 7F — Admin in-memory public export preview/download
+
+7F is a safe implementation stage after 7F.0. It adds an Admin preview/download block for the future public export file:
+
+```text
+public_stones_v1.csv
+```
+
+Location:
+
+```text
+Цены → Index и просмотр → Публичный слой
+```
+
+7F source of truth:
+
+```text
+7E public-layer preview/audit result
+```
+
+7F must not build export rows directly from all `stones_master.csv` rows. It must export only rows that pass 7D/7E public-layer rules.
+
+Allowed in 7F:
+
+```text
+read stones_master.csv
+read catalog_sections.csv
+apply 7D public-layer rules
+build public_stones_v1.csv in memory
+show public-safe export preview
+provide download_button for public_stones_v1.csv
+```
+
+Forbidden in 7F:
+
+```text
+write exports/
+write kurgin-data
+sync with public site
+change stones_master.csv
+change catalog_sections.csv
+change status
+change availability_status
+change catalog_section
+change prices
+turn on allow_price_on_request
+create backup
+create PDF
+create assets
+create orders/reserves/payments
+```
+
+7F public export rows may only use public-safe fields from `docs/PUBLIC_EXPORT_CONTRACT_V1.md`.
+
+7F must not export internal/admin/formula fields:
+
+```text
+supplier_price_*
+internal_price_*
+start_price_*
+working_price_*
+price_fx_usd_rub
+price_calculated_at
+price_source
+price_warning
+admin_note
+price_comment
+shipment_id
+supplier_name
+import_id
+source_file
+margins
+formula internals
+raw diagnostics
+private thresholds
+private penalties
+manual/auto technical marker
+```
+
+If there are zero public candidates, `public_stones_v1.csv` may be downloaded with headers only. This is valid and expected while all stones are `draft`.
+
+Next stage after 7F must be separately discussed. 7F does not publish to `kurgin-data`.
+

@@ -1498,6 +1498,43 @@ PUBLIC_PREVIEW_COLUMNS = [
     "public_visibility_reason",
 ]
 
+PUBLIC_EXPORT_SCHEMA_VERSION = "public_stones_v1"
+PUBLIC_EXPORT_FILENAME = "public_stones_v1.csv"
+PUBLIC_EXPORT_COLUMNS = [
+    "schema_version",
+    "exported_at",
+    "stone_id",
+    "report_number",
+    "lab",
+    "catalog_section",
+    "section_name",
+    "public_card_status",
+    "public_visibility_reason",
+    "shape",
+    "weight",
+    "carat_label",
+    "color",
+    "clarity",
+    "kurgin_score",
+    "kurgin_score_range_label",
+    "public_price_display",
+    "price_display_type",
+    "min_diameter",
+    "max_diameter",
+    "height",
+    "depth_mm",
+    "cut_grade",
+    "symmetry",
+    "polish",
+    "fluorescence",
+    "tags",
+    "availability_status_public",
+    "detail_available",
+    "kurgin_report_available",
+    "lab_report_available",
+    "main_image_available",
+]
+
 
 def _has_text(value) -> bool:
     if value is None:
@@ -1783,3 +1820,120 @@ def build_public_layer_preview() -> dict:
         "warning_df": warning_df,
         "generated_at": generated_at,
     }
+
+def _public_export_status_from_price_type(price_display_type: str) -> str:
+    value = str(price_display_type).strip()
+    if value == "numeric":
+        return "public_numeric_price"
+    if value == "price_on_request":
+        return "public_price_on_request"
+    return ""
+
+
+def _public_visibility_reason_for_export(price_display_type: str) -> str:
+    value = str(price_display_type).strip()
+    if value == "numeric":
+        return "published / in_stock / public section / numeric price"
+    if value == "price_on_request":
+        return "published / in_stock / public section / price on request"
+    return ""
+
+
+def _carat_label(value) -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return ""
+    try:
+        number = float(text)
+        return f"{number:.2f} ct"
+    except Exception:
+        return f"{text} ct"
+
+
+def build_public_export_preview(public_layer_data: dict | None = None) -> dict:
+    """7F: build public_stones_v1 preview from 7E public-layer data.
+
+    This is intentionally read-only. It does not write exports/, does not write
+    kurgin-data and does not mutate Admin CSV files.
+    """
+    public_data = public_layer_data if public_layer_data is not None else build_public_layer_preview()
+    source_df = public_data.get("public_preview_df", pd.DataFrame())
+    generated_at = public_data.get("generated_at") or public_data.get("summary", {}).get("generated_at") or _now_iso()
+
+    rows = []
+    if source_df is not None and not source_df.empty:
+        for _, item in source_df.iterrows():
+            row = item.to_dict()
+            price_display_type = str(row.get("price_status_public", "")).strip()
+            if price_display_type not in {"numeric", "price_on_request"}:
+                continue
+            depth_mm = row.get("depth_mm", "")
+            rows.append({
+                "schema_version": PUBLIC_EXPORT_SCHEMA_VERSION,
+                "exported_at": generated_at,
+                "stone_id": row.get("stone_id", ""),
+                "report_number": row.get("report_number", ""),
+                "lab": row.get("lab", ""),
+                "catalog_section": row.get("catalog_section", ""),
+                "section_name": row.get("section_name", ""),
+                "public_card_status": _public_export_status_from_price_type(price_display_type),
+                "public_visibility_reason": _public_visibility_reason_for_export(price_display_type),
+                "shape": row.get("shape", ""),
+                "weight": row.get("weight", ""),
+                "carat_label": _carat_label(row.get("weight", "")),
+                "color": row.get("color", ""),
+                "clarity": row.get("clarity", ""),
+                "kurgin_score": row.get("kurgin_score", ""),
+                "kurgin_score_range_label": row.get("kurgin_score_range", ""),
+                "public_price_display": row.get("public_price_display", ""),
+                "price_display_type": price_display_type,
+                "min_diameter": row.get("min_diameter", ""),
+                "max_diameter": row.get("max_diameter", ""),
+                "height": row.get("height", depth_mm),
+                "depth_mm": depth_mm,
+                "cut_grade": row.get("cut_grade", ""),
+                "symmetry": row.get("symmetry", ""),
+                "polish": row.get("polish", ""),
+                "fluorescence": _normalize_fluorescence_display(row.get("fluorescence", "")),
+                "tags": row.get("tags", ""),
+                "availability_status_public": row.get("availability_status_public", ""),
+                "detail_available": "false",
+                "kurgin_report_available": "false",
+                "lab_report_available": "false",
+                "main_image_available": "false",
+            })
+
+    export_df = pd.DataFrame(rows)
+    for col in PUBLIC_EXPORT_COLUMNS:
+        if col not in export_df.columns:
+            export_df[col] = ""
+    export_df = export_df[PUBLIC_EXPORT_COLUMNS] if not export_df.empty else pd.DataFrame(columns=PUBLIC_EXPORT_COLUMNS)
+
+    numeric_count = 0
+    price_on_request_count = 0
+    if not export_df.empty:
+        numeric_count = int((export_df["price_display_type"].astype(str) == "numeric").sum())
+        price_on_request_count = int((export_df["price_display_type"].astype(str) == "price_on_request").sum())
+
+    return {
+        "summary": {
+            "filename": PUBLIC_EXPORT_FILENAME,
+            "schema_version": PUBLIC_EXPORT_SCHEMA_VERSION,
+            "generated_at": generated_at,
+            "rows": int(len(export_df)),
+            "numeric": numeric_count,
+            "price_on_request": price_on_request_count,
+        },
+        "export_df": export_df,
+    }
+
+
+def build_public_stones_v1_csv_bytes(export_df: pd.DataFrame | None = None) -> bytes:
+    """Return public_stones_v1.csv bytes without writing to disk."""
+    df = export_df.copy() if export_df is not None else build_public_export_preview().get("export_df", pd.DataFrame())
+    for col in PUBLIC_EXPORT_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[PUBLIC_EXPORT_COLUMNS] if not df.empty else pd.DataFrame(columns=PUBLIC_EXPORT_COLUMNS)
+    return df.to_csv(index=False).encode("utf-8-sig")
+

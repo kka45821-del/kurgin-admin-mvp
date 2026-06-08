@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, build_public_layer_preview, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, build_public_layer_preview, build_public_export_preview, build_public_stones_v1_csv_bytes, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -1533,6 +1533,31 @@ elif page == "Цены":
             else:
                 st.dataframe(public_preview_df, use_container_width=True, hide_index=True, height=420)
 
+        export_data = build_public_export_preview(public_data)
+        export_summary = export_data.get("summary", {})
+        export_df = export_data.get("export_df", pd.DataFrame())
+        with st.expander("Public export preview — public_stones_v1.csv", expanded=True):
+            st.caption("7F: CSV формируется только в памяти. Файл не записывается в exports/, не отправляется в kurgin-data и не синхронизируется с сайтом.")
+            e1, e2, e3, e4 = st.columns(4)
+            e1.metric("Export rows", export_summary.get("rows", 0))
+            e2.metric("Numeric", export_summary.get("numeric", 0))
+            e3.metric("Цена по запросу", export_summary.get("price_on_request", 0))
+            e4.metric("Schema", export_summary.get("schema_version", "public_stones_v1"))
+
+            if export_df.empty:
+                st.info("Сейчас public_stones_v1.csv будет содержать только headers. Это нормально, если нет public candidates.")
+            else:
+                st.dataframe(export_df, use_container_width=True, hide_index=True, height=420)
+
+            st.download_button(
+                "Скачать public_stones_v1.csv",
+                data=build_public_stones_v1_csv_bytes(export_df),
+                file_name=export_summary.get("filename", "public_stones_v1.csv"),
+                mime="text/csv",
+                key="download_public_stones_v1_csv",
+            )
+            st.warning("Это download-only preview. 7F не публикует камни и не создаёт файлов в репозитории.")
+
         st.divider()
         st.subheader("Полный audit")
 
@@ -1595,7 +1620,7 @@ elif page == "Цены":
                 cols = [c for c in ["Группа", "Причина", "Предупреждения", "ID", "Report #", "price_source", "Цена"] if c in warning_df.columns]
                 st.dataframe(warning_df[cols], use_container_width=True, hide_index=True, height=360)
 
-        st.info("7E — только preview/audit. Публикация, export/schema, sync, PDF и карточка сайта остаются следующими этапами.")
+        st.info("7E/7F — только preview/audit/download из памяти. Публикация, sync, PDF и карточка сайта остаются следующими этапами.")
 
 
 elif page == "Журнал импорта":

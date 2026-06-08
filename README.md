@@ -679,3 +679,49 @@ Next possible implementation stage after 7F.0 is accepted:
 ```text
 7F — Admin in-memory public export preview/download
 ```
+
+## 7F — Admin in-memory public export preview/download
+
+7F adds a safe Admin preview/download block for the future public export file:
+
+```text
+public_stones_v1.csv
+```
+
+Location:
+
+```text
+Цены → Index и просмотр → Публичный слой
+```
+
+7F uses the same public-layer result as 7E and builds the export table only in memory. It does not write `exports/`, does not write `kurgin-data`, does not sync with the public site and does not mutate Admin CSV files.
+
+Allowed in 7F:
+
+```text
+read stones_master.csv
+read catalog_sections.csv
+apply 7D public-layer rules
+build public_stones_v1.csv preview from public candidates
+show public-safe export rows
+download public_stones_v1.csv through Streamlit download_button
+```
+
+Forbidden in 7F:
+
+```text
+write exports/
+write kurgin-data
+sync with the site
+change stones_master.csv
+change catalog_sections.csv
+change status / availability_status / catalog_section
+change prices
+turn on allow_price_on_request
+create backups
+create PDFs/assets
+create orders/reserves/payments
+```
+
+If there are no public candidates, 7F still allows downloading `public_stones_v1.csv` with headers only. This is valid while all stones are still `draft`.
+
