@@ -866,3 +866,204 @@ turn on allow_price_on_request
 publish or sync stones
 create PDF/assets
 ```
+
+## 7F.0 — Public Export / Public Card Schema Contract
+
+7F.0 is docs-only. It defines the future public export and public card schema contract. Code, export files, sync, site integration, PDF/assets and CSV mutation are forbidden in this stage.
+
+Stable base:
+
+```text
+Checkpoint 29 — Stage 7E.1 Public Layer UI Fixes
+```
+
+### Purpose
+
+7F.0 defines what Admin may later export for the public site/catalog card.
+
+Intended future flow:
+
+```text
+KURGIN Admin
+↓
+7E public-layer preview/audit
+↓
+7F public export preview/download
+↓
+8A controlled publish path
+↓
+kurgin-data
+↓
+public site / catalog card
+```
+
+### Future export file
+
+Canonical future export file:
+
+```text
+public_stones_v1.csv
+```
+
+This file must be versioned and must not silently replace legacy/current `stones.csv` until the public site is explicitly migrated.
+
+### Allowed public export rows
+
+Only rows that pass the 7D / 7E public-layer rules may enter `public_stones_v1.csv`.
+
+Allowed export statuses:
+
+```text
+public_numeric_price
+public_price_on_request
+```
+
+Internal audit-only states must not be exported as public rows:
+
+```text
+not_public
+data_problem
+hidden_by_status
+hidden_by_availability_status
+hidden_by_catalog_section
+missing_price
+ready_but_not_published
+```
+
+### Public card schema fields
+
+Future public card/export may include:
+
+```text
+schema_version
+exported_at
+stone_id
+report_number
+lab
+catalog_section
+section_name
+public_card_status
+public_visibility_reason
+shape
+weight
+carat_label
+color
+clarity
+kurgin_score
+kurgin_score_range_label
+public_price_display
+price_display_type
+min_diameter
+max_diameter
+height
+depth_mm
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+availability_status_public
+detail_available
+kurgin_report_available
+lab_report_available
+main_image_available
+```
+
+### Price display contract
+
+The public site must show only:
+
+```text
+public_price_display
+```
+
+Canonical `price_display_type` values:
+
+```text
+numeric
+price_on_request
+```
+
+The public site, card UI and PDF generator must not calculate price.
+
+### Forbidden export fields
+
+Future public export must not include:
+
+```text
+supplier_price_*
+internal_price_*
+start_price_*
+working_price_*
+price_fx_usd_rub
+price_calculated_at
+price_source
+price_warning
+admin_note
+price_comment
+shipment_id
+supplier_id
+supplier_name
+import_id
+updated_import_id
+last_source_file
+raw_source_file
+margins
+expense coefficients
+formula internals
+formula thresholds
+formula penalties
+raw diagnostics
+breakdown
+private API keys
+private service URLs
+```
+
+### kurgin-data boundary
+
+7F.0 does not write to `kurgin-data`.
+
+A later controlled publish stage may write public data there only after:
+
+```text
+public_stones_v1.csv schema is accepted
+Admin preview/download is tested
+site reader compatibility is confirmed
+rollback/manual restore path is known
+```
+
+### Future-only flags
+
+Public export may reserve future flags:
+
+```text
+detail_available
+kurgin_report_available
+lab_report_available
+main_image_available
+```
+
+V1 still does not implement:
+
+```text
+PDF generation
+PDF upload/viewer
+asset manager
+active stone_assets.csv
+lab report storage
+photo/video/gallery storage
+```
+
+Full contract is documented in:
+
+```text
+docs/PUBLIC_EXPORT_CONTRACT_V1.md
+```
+
+Next implementation stage must be separate:
+
+```text
+7F — Admin in-memory public export preview/download
+```
+
+7F must still be safe: build downloadable public export from memory only, without writing `exports/`, without writing `kurgin-data`, without sync and without mutating `stones_master.csv`.

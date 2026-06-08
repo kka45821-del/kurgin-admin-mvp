@@ -602,3 +602,80 @@ Streamlit only displays the returned preview/audit tables.
 - Price navigation separates KURGIN Score coefficients and currency rates into separate top-level buttons.
 
 7E.1 does not change prices, does not write public exports, does not publish stones, does not sync with the site and does not generate PDFs.
+
+## 7F.0 — Public Export / Public Card Schema Contract
+
+7F.0 is documentation only. It defines the future public export and public card schema contract after the 7E.1 public-layer audit UI fixes.
+
+Canonical future export file:
+
+```text
+public_stones_v1.csv
+```
+
+The file is versioned and must not silently replace existing/legacy `stones.csv` until the public site is explicitly migrated.
+
+Future flow:
+
+```text
+KURGIN Admin
+↓
+7E public-layer preview/audit
+↓
+7F public export preview/download
+↓
+8A controlled publish path
+↓
+kurgin-data
+↓
+public site / catalog card
+```
+
+Future public card/export fields include public-safe data only:
+
+```text
+schema_version
+exported_at
+stone_id
+report_number
+lab
+catalog_section
+section_name
+public_card_status
+public_visibility_reason
+shape
+weight
+carat_label
+color
+clarity
+kurgin_score
+kurgin_score_range_label
+public_price_display
+price_display_type
+min_diameter
+max_diameter
+height / depth_mm
+cut_grade
+symmetry
+polish
+fluorescence
+tags
+availability_status_public
+future availability flags for detail/report/assets
+```
+
+The public site may show only prepared `public_price_display`. It must not calculate price and must not receive supplier/internal/start/working prices, margins, `price_source`, FX metadata, admin notes, formula internals or raw diagnostics.
+
+7F.0 does not add code, does not generate exports, does not write `exports/`, does not write `kurgin-data`, does not sync with the site and does not change CSV data.
+
+Detailed contract:
+
+```text
+docs/PUBLIC_EXPORT_CONTRACT_V1.md
+```
+
+Next possible implementation stage after 7F.0 is accepted:
+
+```text
+7F — Admin in-memory public export preview/download
+```
