@@ -3,7 +3,7 @@
 Stable checkpoint:
 
 ```text
-Checkpoint 31 — Stage 7F Public Export Preview/Download
+Checkpoint 32 — Stage 8A.0 Controlled Publish Path Rules
 ```
 
 Previous checkpoints:
@@ -15,6 +15,7 @@ Checkpoint 27 — Stage 7D Public Layer Rules
 Checkpoint 28 — Stage 7E Public Layer Preview/Audit
 Checkpoint 29 — Stage 7E.1 Public Layer UI Fixes
 Checkpoint 30 — Stage 7F.0 Public Export / Public Card Schema Contract
+Checkpoint 31 — Stage 7F Public Export Preview/Download
 ```
 
 ## Current state
@@ -23,47 +24,47 @@ Checkpoint 30 — Stage 7F.0 Public Export / Public Card Schema Contract
 7C writes final prices to stones_master.csv with preview + confirmation + backup.
 7D documents public-layer rules.
 7E adds read-only Admin preview/audit of the future public layer.
-7E.1 fixes KURGIN Score range visibility, price navigation and fluorescence display.
-7F.0 documents the future public export / public card schema contract.
+7E.1 fixes KURGIN Score ranges, price navigation and fluorescence display.
+7F.0 documents the public export / public card schema contract.
 7F implements Admin in-memory public_stones_v1.csv preview/download.
+8A.0 documents the controlled publish path to kurgin-data.
 ```
 
-## 7F behavior
+## 8A.0 rules
 
-Location:
+Future intended flow:
 
 ```text
-Цены → Index и просмотр → Публичный слой
+KURGIN Admin
+↓
+7F public_stones_v1.csv preview/download
+↓
+manual controlled publish
+↓
+kurgin-data
+↓
+public site / catalog card
 ```
 
-7F adds:
+V1 publish must remain manual and controlled.
+
+`public_stones_v1.csv` must not silently replace legacy/current `stones.csv`.
+
+The public site must not:
 
 ```text
-Public export preview — public_stones_v1.csv
+read stones_master.csv directly
+calculate prices
+receive supplier/internal/start/working prices
+receive formula internals
+receive admin metadata
 ```
 
-It:
+Empty export handling:
 
 ```text
-builds export rows only from 7E public candidates
-shows only public-safe fields
-allows download through Streamlit download_button
-returns headers-only CSV when public candidates = 0
-```
-
-It does not:
-
-```text
-write exports/
-write kurgin-data
-sync with public site
-change stones_master.csv
-change catalog_sections.csv
-change status / availability / section / prices
-turn on allow_price_on_request
-create backups
-create PDF/assets
-create orders/reserves/payments
+headers-only CSV is valid for preview/download.
+Publishing empty public_stones_v1.csv to kurgin-data must require explicit warning and confirmation.
 ```
 
 ## Important V1 limitation
@@ -81,7 +82,7 @@ Discuss next stage rules before code.
 Likely topic:
 
 ```text
-8A — controlled publish path to kurgin-data
+8A — manual publish package / snapshot structure
 ```
 
 Do not start 8A code until rules are confirmed.

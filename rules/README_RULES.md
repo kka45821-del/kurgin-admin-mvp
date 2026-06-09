@@ -1151,3 +1151,173 @@ If there are zero public candidates, `public_stones_v1.csv` may be downloaded wi
 
 Next stage after 7F must be separately discussed. 7F does not publish to `kurgin-data`.
 
+
+
+## 8A.0 — Controlled publish path to kurgin-data
+
+8A.0 is rules-only. It defines the future controlled publish path from Admin to `kurgin-data` after 7F public export preview/download.
+
+Stable base:
+
+```text
+Checkpoint 31 — Stage 7F Public Export Preview/Download
+```
+
+### Purpose
+
+8A.0 defines how the public export may later move from Admin to the public data layer without accidental site sync or accidental catalog overwrite.
+
+Intended future flow:
+
+```text
+KURGIN Admin
+↓
+7F public_stones_v1.csv preview/download
+↓
+manual controlled publish
+↓
+kurgin-data
+↓
+public site / catalog card
+```
+
+### Repository boundaries
+
+```text
+kurgin-admin-mvp        → source of public export generation
+kurgin-data             → public data layer
+kurgin-streamlit-mvp    → public site reader / catalog UI
+```
+
+Rules:
+
+```text
+Admin generates public_stones_v1.csv.
+kurgin-data stores public data for the site.
+The public site reads kurgin-data.
+The public site must not read stones_master.csv directly.
+The public site must not calculate prices.
+The public site must not filter out private/admin fields; private/admin fields must never reach public_stones_v1.csv.
+```
+
+### Manual controlled publish in V1
+
+V1 publish must remain manual and controlled:
+
+```text
+1. Admin builds 7E public-layer audit.
+2. Admin builds 7F public_stones_v1.csv preview/download.
+3. Operator checks audit, warnings, manual review and export row count.
+4. Operator downloads public_stones_v1.csv.
+5. Operator updates kurgin-data separately.
+6. Site reads public_stones_v1.csv from kurgin-data.
+```
+
+No automatic sync is allowed in 8A.0.
+
+### Legacy file boundary
+
+```text
+public_stones_v1.csv
+```
+
+must not silently replace legacy/current:
+
+```text
+stones.csv
+```
+
+Public-site migration to `public_stones_v1.csv` must be a separate stage.
+
+### Required checks before future publish
+
+Before a future publish to `kurgin-data`, the operator must verify:
+
+```text
+schema_version = public_stones_v1
+only public-safe columns are present
+forbidden internal/admin/formula fields are absent
+there are no data-problem rows in export
+public_price_display is filled for every export row
+price_display_type is numeric or price_on_request
+public_card_status is public_numeric_price or public_price_on_request
+KURGIN Score range is filled
+fluorescence uses None for empty/none-like display
+row_count is intentional
+```
+
+### Empty export rule
+
+Headers-only `public_stones_v1.csv` is allowed in 7F preview/download.
+
+Publishing an empty `public_stones_v1.csv` to `kurgin-data` must require:
+
+```text
+explicit warning
+explicit confirmation
+operator acknowledgement that the public catalog may become empty
+```
+
+### Publish manifest — future rule
+
+Future controlled publish should create or preserve:
+
+```text
+publish_manifest.json
+```
+
+Minimum manifest fields:
+
+```text
+schema_version
+published_at
+source_repo
+source_checkpoint
+export_file
+row_count
+numeric_count
+price_on_request_count
+export_hash
+published_by
+notes
+```
+
+### Forbidden in 8A.0
+
+```text
+write kurgin-data
+write exports/
+sync with public site
+use GitHub API publish
+automate publish
+create workflow
+change stones_master.csv
+change catalog_sections.csv
+change public_stones_v1.csv generation
+change status
+change availability_status
+change catalog_section
+change prices
+turn on allow_price_on_request
+create backup
+create PDF/assets
+create DB
+```
+
+### Future stages
+
+```text
+8A — manual publish package / snapshot structure
+8B — public site reads public_stones_v1.csv
+8C — controlled sync or semi-automatic publish
+V2 — database source of truth
+V2 — unified PDF generator / assets
+```
+
+Full rules are documented in:
+
+```text
+docs/CONTROLLED_PUBLISH_PATH_V1.md
+```
+
+Next code stage must be separate. 8A code must not start until implementation rules are separately agreed.

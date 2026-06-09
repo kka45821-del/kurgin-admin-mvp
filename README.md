@@ -725,3 +725,94 @@ create orders/reserves/payments
 
 If there are no public candidates, 7F still allows downloading `public_stones_v1.csv` with headers only. This is valid while all stones are still `draft`.
 
+
+
+## 8A.0 — Controlled publish path to kurgin-data
+
+8A.0 is documentation only. It defines the future controlled publish path from Admin to the public data layer.
+
+Intended future flow:
+
+```text
+KURGIN Admin
+↓
+7F public_stones_v1.csv preview/download
+↓
+manual controlled publish
+↓
+kurgin-data
+↓
+public site / catalog card
+```
+
+For V1, publish must remain manual and controlled. Admin may generate and download `public_stones_v1.csv`, but 8A.0 does not write to `kurgin-data`, does not sync with the public site and does not create automation.
+
+Core rule:
+
+```text
+kurgin-admin-mvp generates public export.
+kurgin-data is the public data layer.
+kurgin-streamlit-mvp / public site reads public data.
+The public site must not read stones_master.csv directly.
+```
+
+`public_stones_v1.csv` must not silently replace legacy/current `stones.csv`. Any migration of the public site to the new schema must be a separate stage.
+
+Before a future publish to `kurgin-data`, the operator must verify:
+
+```text
+schema_version = public_stones_v1
+only public-safe columns are present
+forbidden internal/admin/formula fields are absent
+public_price_display is filled for every export row
+price_display_type is numeric or price_on_request
+public_card_status is public_numeric_price or public_price_on_request
+KURGIN Score range is filled
+fluorescence uses None for empty/none-like display
+row_count is intentional
+```
+
+Empty export handling:
+
+```text
+Headers-only public_stones_v1.csv is allowed for preview/download.
+Publishing an empty public_stones_v1.csv to kurgin-data must require a separate warning and explicit confirmation.
+```
+
+Future controlled publish should create or preserve a publish manifest:
+
+```text
+publish_manifest.json
+```
+
+with at least:
+
+```text
+schema_version
+published_at
+source_repo
+source_checkpoint
+export_file
+row_count
+numeric_count
+price_on_request_count
+export_hash
+published_by
+notes
+```
+
+8A.0 does not change code, data, Streamlit UI, export generation, PDF/assets, database or site integration.
+
+Detailed rules:
+
+```text
+docs/CONTROLLED_PUBLISH_PATH_V1.md
+```
+
+Next possible implementation stage after 8A.0 is accepted:
+
+```text
+8A — manual publish package / snapshot structure
+```
+
+8A code must not start until its implementation rules are separately agreed.
