@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import hashlib
+import io
 import json
 import shutil
+import zipfile
 import pandas as pd
 
 from .paths import ensure_dirs, BACKUPS_DIR, STONES_FILE, SHIPMENTS_FILE, IMPORT_LOG_FILE, RAW_DIR, PAYMENTS_FILE, PRICE_SUPPLIER_FILE, PRICE_EXPENSE_RATES_FILE, PRICE_MARGINS_FILE, PRICE_SCORE_COEFFICIENTS_FILE, CURRENCY_RATES_FILE, CATALOG_SECTIONS_FILE
@@ -1936,4 +1938,315 @@ def build_public_stones_v1_csv_bytes(export_df: pd.DataFrame | None = None) -> b
             df[col] = ""
     df = df[PUBLIC_EXPORT_COLUMNS] if not df.empty else pd.DataFrame(columns=PUBLIC_EXPORT_COLUMNS)
     return df.to_csv(index=False).encode("utf-8-sig")
+
+
+PUBLIC_PUBLISH_PACKAGE_VERSION = "publish_package_v1"
+PUBLIC_PUBLISH_PACKAGE_PREFIX = "kurgin-public-publish-package"
+PUBLIC_PUBLISH_PACKAGE_FILES = [
+    PUBLIC_EXPORT_FILENAME,
+    "publish_manifest.json",
+    "publish_checks.json",
+    "README_MANUAL_PUBLISH.md",
+]
+
+PUBLIC_EXPORT_FORBIDDEN_EXACT_COLUMNS = {
+    "price_source",
+    "price_warning",
+    "price_fx_usd_rub",
+    "price_calculated_at",
+    "admin_note",
+    "price_comment",
+    "shipment_id",
+    "supplier_id",
+    "supplier_name",
+    "import_id",
+    "updated_import_id",
+    "last_source_file",
+    "raw_source_file",
+    "formula_thresholds",
+    "formula_penalties",
+    "raw_diagnostics",
+    "breakdown",
+    "manual_price_review",
+    "private_api_key",
+    "private_service_url",
+}
+PUBLIC_EXPORT_FORBIDDEN_PREFIXES = (
+    "supplier_price_",
+    "internal_price_",
+    "start_price_",
+    "working_price_",
+    "margin_",
+    "expense_",
+    "formula_",
+    "raw_",
+)
+PUBLIC_EXPORT_ALLOWED_PRICE_TYPES = {"numeric", "price_on_request"}
+PUBLIC_EXPORT_ALLOWED_CARD_STATUSES = {"public_numeric_price", "public_price_on_request"}
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _json_bytes(data: dict) -> bytes:
+    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+
+
+def _public_export_forbidden_columns(columns: list[str]) -> list[str]:
+    found = []
+    for col in columns:
+        col_text = str(col).strip()
+        col_lower = col_text.lower()
+        if col_lower in PUBLIC_EXPORT_FORBIDDEN_EXACT_COLUMNS:
+            found.append(col_text)
+            continue
+        if any(col_lower.startswith(prefix) for prefix in PUBLIC_EXPORT_FORBIDDEN_PREFIXES):
+            found.append(col_text)
+    return sorted(dict.fromkeys(found))
+
+
+def _public_export_required_missing(columns: list[str]) -> list[str]:
+    present = {str(c).strip() for c in columns}
+    return [col for col in PUBLIC_EXPORT_COLUMNS if col not in present]
+
+
+def _validate_public_export_for_publish(export_df: pd.DataFrame, public_layer_data: dict, export_summary: dict) -> dict:
+    """8A: validate public_stones_v1.csv before manual publish package download.
+
+    This function only inspects in-memory data. It does not write files, sync
+    repositories or mutate Admin CSV data.
+    """
+    blockers = []
+    warnings = []
+    columns = [str(c) for c in export_df.columns.tolist()]
+    missing_columns = _public_export_required_missing(columns)
+    forbidden_columns = _public_export_forbidden_columns(columns)
+
+    if missing_columns:
+        blockers.append("Missing required public export columns: " + ", ".join(missing_columns))
+    if forbidden_columns:
+        blockers.append("Forbidden internal/admin columns found: " + ", ".join(forbidden_columns))
+
+    row_count = int(len(export_df))
+    is_empty_export = row_count == 0
+    if is_empty_export:
+        warnings.append("Empty export: package contains headers-only public_stones_v1.csv. Publishing it may empty the public catalog and requires separate confirmation.")
+
+    invalid_schema_count = 0
+    missing_price_display_count = 0
+    invalid_price_type_count = 0
+    invalid_card_status_count = 0
+    missing_score_range_count = 0
+    blank_fluorescence_count = 0
+
+    if not export_df.empty:
+        invalid_schema_count = int((export_df["schema_version"].astype(str) != PUBLIC_EXPORT_SCHEMA_VERSION).sum()) if "schema_version" in export_df.columns else row_count
+        missing_price_display_count = int((export_df["public_price_display"].astype(str).str.strip() == "").sum()) if "public_price_display" in export_df.columns else row_count
+        invalid_price_type_count = int((~export_df["price_display_type"].astype(str).isin(PUBLIC_EXPORT_ALLOWED_PRICE_TYPES)).sum()) if "price_display_type" in export_df.columns else row_count
+        invalid_card_status_count = int((~export_df["public_card_status"].astype(str).isin(PUBLIC_EXPORT_ALLOWED_CARD_STATUSES)).sum()) if "public_card_status" in export_df.columns else row_count
+        missing_score_range_count = int((export_df["kurgin_score_range_label"].astype(str).str.strip() == "").sum()) if "kurgin_score_range_label" in export_df.columns else row_count
+        blank_fluorescence_count = int((export_df["fluorescence"].astype(str).str.strip() == "").sum()) if "fluorescence" in export_df.columns else row_count
+
+    if invalid_schema_count:
+        blockers.append(f"Rows with invalid schema_version: {invalid_schema_count}")
+    if missing_price_display_count:
+        blockers.append(f"Rows without public_price_display: {missing_price_display_count}")
+    if invalid_price_type_count:
+        blockers.append(f"Rows with invalid price_display_type: {invalid_price_type_count}")
+    if invalid_card_status_count:
+        blockers.append(f"Rows with invalid public_card_status: {invalid_card_status_count}")
+    if missing_score_range_count:
+        blockers.append(f"Rows without KURGIN Score range: {missing_score_range_count}")
+    if blank_fluorescence_count:
+        blockers.append(f"Rows with blank fluorescence display: {blank_fluorescence_count}")
+
+    public_summary = public_layer_data.get("summary", {}) if isinstance(public_layer_data, dict) else {}
+    audit_data_problem_count = int(public_summary.get("data_problems", 0) or 0)
+    audit_warning_count = int(public_summary.get("warnings", 0) or 0)
+    manual_review_count = int(public_summary.get("manual_price_review", 0) or 0)
+
+    if audit_data_problem_count:
+        warnings.append(f"Public-layer audit has data problem rows outside the export: {audit_data_problem_count}. Review them before publishing.")
+    if audit_warning_count:
+        warnings.append(f"Public-layer audit has warnings/manual review rows: {audit_warning_count}. Review them before publishing.")
+    if manual_review_count:
+        warnings.append(f"Manual price review rows exist in audit: {manual_review_count}. The public CSV does not expose price_source, but Admin should review them.")
+
+    numeric_count = int(export_summary.get("numeric", 0) or 0)
+    price_on_request_count = int(export_summary.get("price_on_request", 0) or 0)
+
+    return {
+        "schema_version": "publish_checks_v1",
+        "checked_at": _now_iso(),
+        "export_file": PUBLIC_EXPORT_FILENAME,
+        "row_count": row_count,
+        "numeric_count": numeric_count,
+        "price_on_request_count": price_on_request_count,
+        "is_empty_export": is_empty_export,
+        "requires_empty_export_confirmation": is_empty_export,
+        "can_publish_without_extra_confirmation": len(blockers) == 0 and not is_empty_export,
+        "blockers": blockers,
+        "warnings": warnings,
+        "required_columns_missing": missing_columns,
+        "forbidden_columns_found": forbidden_columns,
+        "row_checks": {
+            "invalid_schema_count": invalid_schema_count,
+            "missing_price_display_count": missing_price_display_count,
+            "invalid_price_type_count": invalid_price_type_count,
+            "invalid_card_status_count": invalid_card_status_count,
+            "missing_score_range_count": missing_score_range_count,
+            "blank_fluorescence_count": blank_fluorescence_count,
+        },
+        "audit_counts": {
+            "data_problem_count": audit_data_problem_count,
+            "warning_count": audit_warning_count,
+            "manual_review_count": manual_review_count,
+        },
+    }
+
+
+def _build_manual_publish_readme(manifest: dict, checks: dict) -> str:
+    warning_block = ""
+    if checks.get("is_empty_export"):
+        warning_block = """
+
+## EMPTY EXPORT WARNING
+
+This package contains headers-only public_stones_v1.csv. Publishing it to kurgin-data may empty the public catalog.
+Do not publish an empty export unless this is intentional and separately confirmed.
+"""
+
+    return f"""# KURGIN Manual Publish Package
+
+This package was prepared by KURGIN Admin as an in-memory download.
+It has not been written to exports/, kurgin-data or the public site automatically.
+
+## Package files
+
+```text
+public_stones_v1.csv
+publish_manifest.json
+publish_checks.json
+README_MANUAL_PUBLISH.md
+```
+
+## Summary
+
+```text
+schema_version: {manifest.get('schema_version', '')}
+package_version: {manifest.get('package_version', '')}
+created_at: {manifest.get('created_at', '')}
+row_count: {manifest.get('row_count', 0)}
+numeric_count: {manifest.get('numeric_count', 0)}
+price_on_request_count: {manifest.get('price_on_request_count', 0)}
+is_empty_export: {manifest.get('is_empty_export', False)}
+export_sha256: {manifest.get('export_sha256', '')}
+```
+{warning_block}
+
+## Manual V1 publish flow
+
+```text
+1. Review publish_checks.json.
+2. If blockers are present, do not publish.
+3. If the export is empty, confirm separately that an empty public catalog is intended.
+4. Open the kurgin-data repository.
+5. Preserve the previous public_stones_v1.csv and publish_manifest.json according to the snapshot rule.
+6. Replace public_stones_v1.csv with this package version.
+7. Replace publish_manifest.json with this package version.
+8. Commit and push kurgin-data.
+9. Verify the public site after it reads kurgin-data.
+```
+
+## Do not publish these files to the public site
+
+```text
+publish_checks.json
+README_MANUAL_PUBLISH.md
+```
+
+They are operator/audit files for the manual publish package.
+"""
+
+
+def build_manual_publish_package(public_layer_data: dict | None = None, export_data: dict | None = None) -> dict:
+    """8A: build an in-memory manual publish package ZIP.
+
+    The package contains public_stones_v1.csv, publish_manifest.json,
+    publish_checks.json and README_MANUAL_PUBLISH.md. It does not write files,
+    does not update kurgin-data and does not sync with the public site.
+    """
+    public_data = public_layer_data if public_layer_data is not None else build_public_layer_preview()
+    export_info = export_data if export_data is not None else build_public_export_preview(public_data)
+    export_df = export_info.get("export_df", pd.DataFrame())
+    export_summary = export_info.get("summary", {})
+    created_at = _now_iso()
+    package_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    csv_bytes = build_public_stones_v1_csv_bytes(export_df)
+    export_sha256 = _sha256_bytes(csv_bytes)
+    checks = _validate_public_export_for_publish(export_df, public_data, export_summary)
+    checks_bytes = _json_bytes(checks)
+    checks_sha256 = _sha256_bytes(checks_bytes)
+
+    base_manifest = {
+        "schema_version": PUBLIC_EXPORT_SCHEMA_VERSION,
+        "package_version": PUBLIC_PUBLISH_PACKAGE_VERSION,
+        "created_at": created_at,
+        "published_at": "",
+        "source_app": "kurgin-admin-mvp",
+        "source_checkpoint": "Checkpoint 33 — Stage 8A Manual Publish Package",
+        "export_file": PUBLIC_EXPORT_FILENAME,
+        "package_files": PUBLIC_PUBLISH_PACKAGE_FILES,
+        "row_count": int(checks.get("row_count", 0)),
+        "numeric_count": int(checks.get("numeric_count", 0)),
+        "price_on_request_count": int(checks.get("price_on_request_count", 0)),
+        "data_problem_count": int(checks.get("audit_counts", {}).get("data_problem_count", 0)),
+        "warning_count": int(len(checks.get("warnings", []))),
+        "blocker_count": int(len(checks.get("blockers", []))),
+        "is_empty_export": bool(checks.get("is_empty_export", False)),
+        "requires_empty_export_confirmation": bool(checks.get("requires_empty_export_confirmation", False)),
+        "export_sha256": export_sha256,
+        "export_hash": export_sha256,
+        "publish_checks_sha256": checks_sha256,
+        "published_by": "",
+        "notes": "Manual controlled publish package. Not auto-synced.",
+    }
+    manifest_payload_hash = _sha256_bytes(_json_bytes(base_manifest))
+    manifest = {**base_manifest, "manifest_sha256": manifest_payload_hash}
+    manifest_bytes = _json_bytes(manifest)
+    readme_text = _build_manual_publish_readme(manifest, checks)
+
+    package_buffer = io.BytesIO()
+    with zipfile.ZipFile(package_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(PUBLIC_EXPORT_FILENAME, csv_bytes)
+        zf.writestr("publish_manifest.json", manifest_bytes)
+        zf.writestr("publish_checks.json", checks_bytes)
+        zf.writestr("README_MANUAL_PUBLISH.md", readme_text.encode("utf-8"))
+
+    package_bytes = package_buffer.getvalue()
+    package_filename = f"{PUBLIC_PUBLISH_PACKAGE_PREFIX}-{package_stamp}.zip"
+
+    return {
+        "filename": package_filename,
+        "bytes": package_bytes,
+        "manifest": manifest,
+        "checks": checks,
+        "summary": {
+            "filename": package_filename,
+            "package_version": PUBLIC_PUBLISH_PACKAGE_VERSION,
+            "created_at": created_at,
+            "row_count": int(checks.get("row_count", 0)),
+            "numeric_count": int(checks.get("numeric_count", 0)),
+            "price_on_request_count": int(checks.get("price_on_request_count", 0)),
+            "blocker_count": int(len(checks.get("blockers", []))),
+            "warning_count": int(len(checks.get("warnings", []))),
+            "is_empty_export": bool(checks.get("is_empty_export", False)),
+            "requires_empty_export_confirmation": bool(checks.get("requires_empty_export_confirmation", False)),
+            "export_sha256": export_sha256,
+            "package_size_bytes": len(package_bytes),
+        },
+        "export_df": export_df,
+    }
 

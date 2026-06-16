@@ -1321,3 +1321,94 @@ docs/CONTROLLED_PUBLISH_PATH_V1.md
 ```
 
 Next code stage must be separate. 8A code must not start until implementation rules are separately agreed.
+
+## 8A — Manual Publish Package / Snapshot Structure
+
+8A implements an in-memory manual publish package for the future controlled publish path.
+
+Location:
+
+```text
+Цены → Index и просмотр → Публичный слой → Manual publish package — kurgin-data
+```
+
+Allowed in 8A:
+
+```text
+build public_stones_v1.csv from 7F export preview
+validate public export columns and values
+build publish_manifest.json
+build publish_checks.json
+build README_MANUAL_PUBLISH.md
+build a ZIP package in memory
+allow operator download through Streamlit download_button
+```
+
+Package filename:
+
+```text
+kurgin-public-publish-package-YYYYMMDD-HHMMSS.zip
+```
+
+Package contents:
+
+```text
+public_stones_v1.csv
+publish_manifest.json
+publish_checks.json
+README_MANUAL_PUBLISH.md
+```
+
+Forbidden in 8A:
+
+```text
+write exports/
+write kurgin-data
+sync with public site
+use GitHub API
+create workflows
+automatically replace stones.csv
+change stones_master.csv
+change catalog_sections.csv
+change status / availability_status / catalog_section
+change prices
+turn on allow_price_on_request
+create backup as part of publish package
+create PDF/assets
+create database
+```
+
+8A package checks must block:
+
+```text
+missing required public export columns
+forbidden internal/admin columns in public_stones_v1.csv
+invalid schema_version
+missing public_price_display
+invalid price_display_type
+invalid public_card_status
+missing KURGIN Score range
+blank fluorescence display
+```
+
+8A package warnings include:
+
+```text
+empty export
+public-layer audit data problems outside export
+public-layer audit warnings/manual review
+manual price review rows
+```
+
+Empty export rule:
+
+```text
+Headers-only public_stones_v1.csv is allowed for package preview/download.
+Publishing an empty package to kurgin-data must require separate warning and human confirmation.
+```
+
+Detailed package rules:
+
+```text
+docs/MANUAL_PUBLISH_PACKAGE_V1.md
+```

@@ -271,3 +271,30 @@ V2 — unified PDF generator / assets
 ## Implementation rule
 
 No 8A implementation code should start until the implementation rules are separately agreed.
+
+## 8A implementation note — manual publish package
+
+8A implements the first safe package step without publishing automatically.
+
+Admin can create an in-memory ZIP package:
+
+```text
+kurgin-public-publish-package-YYYYMMDD-HHMMSS.zip
+```
+
+The package contains:
+
+```text
+public_stones_v1.csv
+publish_manifest.json
+publish_checks.json
+README_MANUAL_PUBLISH.md
+```
+
+This package is for operator-controlled manual movement into `kurgin-data`. It does not write `exports/`, does not update `kurgin-data`, does not sync with the public site and does not replace legacy `stones.csv`.
+
+Detailed package contract:
+
+```text
+docs/MANUAL_PUBLISH_PACKAGE_V1.md
+```

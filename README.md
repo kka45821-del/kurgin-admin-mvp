@@ -816,3 +816,26 @@ Next possible implementation stage after 8A.0 is accepted:
 ```
 
 8A code must not start until its implementation rules are separately agreed.
+
+## 8A — Manual publish package / snapshot structure
+
+Added a safe in-memory manual publish package for the future controlled publish path.
+
+Location:
+
+```text
+Цены → Index и просмотр → Публичный слой → Manual publish package — kurgin-data
+```
+
+The package is downloaded as a ZIP and contains:
+
+```text
+public_stones_v1.csv
+publish_manifest.json
+publish_checks.json
+README_MANUAL_PUBLISH.md
+```
+
+8A is still not an automatic publish/sync. It does not write `exports/`, does not update `kurgin-data`, does not change Admin CSV files, does not create PDF/assets and does not contact the public site.
+
+Empty `public_stones_v1.csv` packages are allowed for preview/download, but publishing an empty file to `kurgin-data` requires separate human confirmation.

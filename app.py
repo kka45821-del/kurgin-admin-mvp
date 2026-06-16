@@ -8,7 +8,7 @@ from modules.paths import ensure_dirs
 from modules.storage import (
     ensure_data_files, generate_import_id, read_shipments, read_stones, read_import_log, read_payments,
     get_shipment_delete_preview, delete_shipment_completely, update_stone_admin_fields,
-    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, build_public_layer_preview, build_public_export_preview, build_public_stones_v1_csv_bytes, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
+    update_shipment_fields, add_payment, delete_payment, read_catalog_sections, update_catalog_sections, update_existing_stones_from_import, read_price_supplier, update_price_supplier, read_price_expense_rates, update_price_expense_rates, read_price_margins, update_price_margins, read_price_score_coefficients, update_price_score_coefficients, read_currency_rates, update_currency_rates, calculate_root_price_table, root_price_matrix_by_color, calculate_index_table, index_price_matrix_by_color, calculate_stone_margin_view, build_price_write_preview, commit_price_write, enable_price_on_request_for_missing, build_public_layer_preview, build_public_export_preview, build_public_stones_v1_csv_bytes, build_manual_publish_package, PRICE_WRITE_CONFIRMATION_TEXT, PRICE_ON_REQUEST_CONFIRMATION_TEXT
 )
 from modules.excel_importer import read_workbook, normalize_stones, get_template_version, split_conflicts, apply_report_corrections_to_results
 from modules.import_commit import commit_import
@@ -1557,6 +1557,61 @@ elif page == "Цены":
                 key="download_public_stones_v1_csv",
             )
             st.warning("Это download-only preview. 7F не публикует камни и не создаёт файлов в репозитории.")
+
+        publish_package = build_manual_publish_package(public_data, export_data)
+        package_summary = publish_package.get("summary", {})
+        publish_checks = publish_package.get("checks", {})
+        with st.expander("Manual publish package — kurgin-data", expanded=True):
+            st.caption(
+                "8A: ZIP-пакет для ручной публикации. Он создаётся только в памяти, не пишет exports/, "
+                "не меняет kurgin-data и не синхронизируется с сайтом."
+            )
+
+            p1, p2, p3, p4, p5 = st.columns(5)
+            p1.metric("Package rows", package_summary.get("row_count", 0))
+            p2.metric("Numeric", package_summary.get("numeric_count", 0))
+            p3.metric("Цена по запросу", package_summary.get("price_on_request_count", 0))
+            p4.metric("Blockers", package_summary.get("blocker_count", 0))
+            p5.metric("Warnings", package_summary.get("warning_count", 0))
+
+            if package_summary.get("is_empty_export"):
+                st.warning(
+                    "Пакет содержит пустой public_stones_v1.csv только с headers. "
+                    "Для preview/download это допустимо. Публиковать пустой файл в kurgin-data можно только после отдельного подтверждения."
+                )
+
+            blockers = publish_checks.get("blockers", [])
+            warnings = publish_checks.get("warnings", [])
+            if blockers:
+                st.error("Есть blockers. Такой пакет нельзя публиковать до исправления.")
+                st.dataframe(pd.DataFrame({"Blockers": blockers}), use_container_width=True, hide_index=True)
+            else:
+                st.success("Blockers не найдены.")
+
+            if warnings:
+                st.warning("Есть warnings. Проверьте их перед ручной публикацией.")
+                st.dataframe(pd.DataFrame({"Warnings": warnings}), use_container_width=True, hide_index=True)
+            else:
+                st.info("Warnings не найдены.")
+
+            manifest = publish_package.get("manifest", {})
+            manifest_view = pd.DataFrame([
+                {"Поле": "package_version", "Значение": manifest.get("package_version", "")},
+                {"Поле": "created_at", "Значение": manifest.get("created_at", "")},
+                {"Поле": "export_sha256", "Значение": manifest.get("export_sha256", "")},
+                {"Поле": "manifest_sha256", "Значение": manifest.get("manifest_sha256", "")},
+                {"Поле": "requires_empty_export_confirmation", "Значение": str(manifest.get("requires_empty_export_confirmation", False))},
+            ])
+            st.dataframe(manifest_view, use_container_width=True, hide_index=True, height=220)
+
+            st.download_button(
+                "Скачать manual publish package ZIP",
+                data=publish_package.get("bytes", b""),
+                file_name=package_summary.get("filename", "kurgin-public-publish-package.zip"),
+                mime="application/zip",
+                key="download_manual_publish_package_zip",
+            )
+            st.info("В ZIP: public_stones_v1.csv, publish_manifest.json, publish_checks.json, README_MANUAL_PUBLISH.md. Это не auto-publish.")
 
         st.divider()
         st.subheader("Полный audit")
