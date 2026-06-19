@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 import shutil
-from pathlib import Path
 import pandas as pd
 
 from .paths import EXPORTS_DIR, STONES_FILE
@@ -120,7 +119,9 @@ def build_publish_preview(stones: pd.DataFrame | None = None, stone_ids: list[st
             df[col] = ""
 
     ids = [str(x) for x in (stone_ids or []) if str(x).strip()]
-    if ids:
+    if stone_ids is not None and not ids:
+        df = df.iloc[0:0].copy()
+    elif ids:
         df = df[df["stone_id"].astype(str).isin(ids)].copy()
 
     public_sections = _public_section_ids()
@@ -162,7 +163,7 @@ def build_publish_preview(stones: pd.DataFrame | None = None, stone_ids: list[st
     }
 
 
-def _backup_with_export(label: str) -> Path:
+def _backup_with_export(label: str):
     backup_dir = backup_existing_files(label)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     export_path = EXPORTS_DIR / PUBLIC_EXPORT_FILENAME
@@ -174,8 +175,12 @@ def _backup_with_export(label: str) -> Path:
 def commit_publish(stone_ids: list[str]) -> dict:
     """Set ready selected stones to published. Skipped stones are not mutated."""
     ensure_data_files()
+    ids = [str(x) for x in (stone_ids or []) if str(x).strip()]
+    if not ids:
+        return {"updated": 0, "backup_dir": "", "preview": build_publish_preview(read_stones(), []), "message": "Не выбраны камни для публикации."}
+
     stones = read_stones()
-    preview = build_publish_preview(stones, stone_ids)
+    preview = build_publish_preview(stones, ids)
     ready_df = preview.get("ready_df", pd.DataFrame())
     ready_ids = ready_df["stone_id"].astype(str).tolist() if not ready_df.empty else []
 
@@ -200,7 +205,9 @@ def build_unpublish_preview(stones: pd.DataFrame | None = None, stone_ids: list[
     ensure_data_files()
     df = stones.copy() if stones is not None else read_stones()
     ids = [str(x) for x in (stone_ids or []) if str(x).strip()]
-    if ids:
+    if stone_ids is not None and not ids:
+        df = df.iloc[0:0].copy()
+    elif ids:
         df = df[df["stone_id"].astype(str).isin(ids)].copy()
 
     rows = []
@@ -232,8 +239,12 @@ def build_unpublish_preview(stones: pd.DataFrame | None = None, stone_ids: list[
 def commit_unpublish(stone_ids: list[str]) -> dict:
     """Remove selected published stones from the public layer by setting status=ready."""
     ensure_data_files()
+    ids = [str(x) for x in (stone_ids or []) if str(x).strip()]
+    if not ids:
+        return {"updated": 0, "backup_dir": "", "preview": build_unpublish_preview(read_stones(), []), "message": "Не выбраны камни для снятия с публикации."}
+
     stones = read_stones()
-    preview = build_unpublish_preview(stones, stone_ids)
+    preview = build_unpublish_preview(stones, ids)
     ready_df = preview.get("ready_df", pd.DataFrame())
     ready_ids = ready_df["stone_id"].astype(str).tolist() if not ready_df.empty else []
 
