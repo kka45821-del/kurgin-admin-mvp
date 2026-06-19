@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 import pandas as pd
 
-from modules.storage import ensure_data_files, read_stones, build_public_layer_preview, build_public_export_preview, build_public_stones_v1_csv_bytes
+from modules.storage import ensure_data_files, read_stones, build_public_stones_v1_csv_bytes
 from modules.publish_stage_7d import (
     PUBLISH_CONFIRMATION_TEXT,
     UNPUBLISH_CONFIRMATION_TEXT,
@@ -14,6 +14,7 @@ from modules.publish_stage_7d import (
     commit_publish,
     commit_unpublish,
     commit_archive,
+    build_public_export_preview_7d,
     write_public_export_file,
 )
 
@@ -98,14 +99,14 @@ def show_preview_table(df: pd.DataFrame, height: int = 360) -> None:
         return
     cols = [
         "stone_id", "report_number", "shipment_id", "shape", "weight", "color", "clarity",
-        "status", "availability_status", "catalog_section", "public_price_display", "price_status", "action", "reason",
+        "status", "availability_status", "catalog_section", "kurgin_score", "public_price_display", "price_status", "action", "reason",
     ]
     cols = [c for c in cols if c in df.columns]
     st.dataframe(labelize(df[cols]), use_container_width=True, hide_index=True, height=height)
 
 
 st.title("Этап 7D — публикация, снятие с публикации и публичный экспорт")
-st.caption("Массовые действия меняют stones_master.csv только после preview, фразы подтверждения и backup. Публичный экспорт записывается отдельно в exports/public_stones_v1.csv.")
+st.caption("Массовые действия меняют stones_master.csv только после preview, фразы подтверждения и backup. Не ROUND камни могут публиковаться без KURGIN Score.")
 
 stones = read_stones()
 if stones.empty:
@@ -124,7 +125,7 @@ metric_cols[4].metric("Цена по запросу", int((filtered.get("allow_p
 
 base_cols = [
     "stone_id", "report_number", "shipment_id", "shape", "weight", "color", "clarity",
-    "status", "availability_status", "catalog_section", "public_price_display", "price_status", "allow_price_on_request",
+    "status", "availability_status", "catalog_section", "kurgin_score", "public_price_display", "price_status", "allow_price_on_request",
 ]
 base_cols = [c for c in base_cols if c in filtered.columns]
 st.dataframe(labelize(filtered[base_cols]), use_container_width=True, hide_index=True, height=360)
@@ -192,16 +193,16 @@ with st.expander("Опасное действие: архив", expanded=False):
 
 st.divider()
 st.subheader("5. Публичный экспорт")
-public_data = build_public_layer_preview()
-export_data = build_public_export_preview(public_data)
+export_data = build_public_export_preview_7d()
 export_summary = export_data.get("summary", {})
 export_df = export_data.get("export_df", pd.DataFrame())
 
-e1, e2, e3, e4 = st.columns(4)
+e1, e2, e3, e4, e5 = st.columns(5)
 e1.metric("Строк в экспорте", export_summary.get("rows", 0))
 e2.metric("Числовая цена", export_summary.get("numeric", 0))
 e3.metric("Цена по запросу", export_summary.get("price_on_request", 0))
-e4.metric("Schema", export_summary.get("schema_version", "public_stones_v1"))
+e4.metric("Не ROUND без Score", export_summary.get("non_round_without_score", 0))
+e5.metric("Schema", export_summary.get("schema_version", "public_stones_v1"))
 
 st.dataframe(export_df, use_container_width=True, hide_index=True, height=360)
 st.download_button(
