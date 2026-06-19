@@ -6,6 +6,8 @@ from typing import Any
 
 import streamlit as st
 
+KURGIN_SCHEMA_NAME = "kurgin_admin"
+
 
 @dataclass(frozen=True)
 class DatabaseConfig:
@@ -52,6 +54,14 @@ def mask_database_url(url: str) -> str:
         return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
     except Exception:
         return "***masked***"
+
+
+def _connect():
+    config = get_database_config()
+    if config is None:
+        raise RuntimeError("DATABASE_URL не найден.")
+    import psycopg
+    return psycopg.connect(config.url, connect_timeout=10)
 
 
 def test_database_connection() -> dict[str, Any]:
@@ -112,3 +122,76 @@ def test_database_connection() -> dict[str, Any]:
             "user": "",
             "current_schema": "",
         }
+
+
+def get_kurgin_schema_status() -> dict[str, Any]:
+    """Read-only status for the dedicated KURGIN schema."""
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select exists(select 1 from information_schema.schemata where schema_name = %s)",
+                    (KURGIN_SCHEMA_NAME,),
+                )
+                exists = bool(cur.fetchone()[0])
+
+                table_rows = []
+                if exists:
+                    cur.execute(
+                        """
+                        select table_name
+                        from information_schema.tables
+                        where table_schema = %s
+                        order by table_name
+                        """,
+                        (KURGIN_SCHEMA_NAME,),
+                    )
+                    table_rows = [row[0] for row in cur.fetchall()]
+
+        return {"ok": True, "exists": exists, "schema": KURGIN_SCHEMA_NAME, "tables": table_rows, "error": ""}
+    except Exception as exc:
+        return {"ok": False, "exists": False, "schema": KURGIN_SCHEMA_NAME, "tables": [], "error": str(exc)}
+
+
+def schema_sql_preview() -> str:
+    return f"""create schema if not exists {KURGIN_SCHEMA_NAME};
+
+create table if not exists {KURGIN_SCHEMA_NAME}.schema_migrations (
+    migration_id text primary key,
+    applied_at timestamptz not null default now(),
+    comment text not null default ''
+);
+
+insert into {KURGIN_SCHEMA_NAME}.schema_migrations (migration_id, comment)
+values ('0001_create_schema', 'Initial KURGIN Admin schema marker')
+on conflict (migration_id) do nothing;
+"""
+
+
+def create_kurgin_schema() -> dict[str, Any]:
+    """Create only the dedicated schema and a migration marker table."""
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"create schema if not exists {KURGIN_SCHEMA_NAME}")
+                cur.execute(
+                    f"""
+                    create table if not exists {KURGIN_SCHEMA_NAME}.schema_migrations (
+                        migration_id text primary key,
+                        applied_at timestamptz not null default now(),
+                        comment text not null default ''
+                    )
+                    """
+                )
+                cur.execute(
+                    f"""
+                    insert into {KURGIN_SCHEMA_NAME}.schema_migrations (migration_id, comment)
+                    values (%s, %s)
+                    on conflict (migration_id) do nothing
+                    """,
+                    ("0001_create_schema", "Initial KURGIN Admin schema marker"),
+                )
+            conn.commit()
+        return {"ok": True, "schema": KURGIN_SCHEMA_NAME, "error": ""}
+    except Exception as exc:
+        return {"ok": False, "schema": KURGIN_SCHEMA_NAME, "error": str(exc)}
